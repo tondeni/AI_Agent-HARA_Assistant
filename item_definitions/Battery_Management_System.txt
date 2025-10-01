@@ -1,0 +1,86 @@
+# Example Item Definition
+# Battery Management System
+
+## Item Information
+Item Name: Battery Management System
+Item ID: BMS-EV-001
+Version: 1.0
+Date: 2025-01-15
+
+## 1. Purpose and Functionality
+
+The Battery Management System (BMS) is responsible for monitoring and controlling
+the high-voltage battery pack in electric vehicles to ensure safe and efficient operation.
+
+### Functions:
+1. Monitor individual cell voltages continuously
+2. Monitor cell and pack temperatures
+3. Calculate State of Charge (SoC)
+4. Calculate State of Health (SoH)
+5. Control main contactors (open/close)
+6. Balance cell voltages during charging
+7. Communicate battery status via CAN bus
+8. Detect and report faults
+9. Control cooling system activation
+10. Implement safety shutdown procedures
+
+## 2. Interfaces
+
+### Internal Interfaces:
+- Cell voltage sensors (up to 96 cells)
+- Temperature sensors (12 locations)
+- Current sensor (high-precision shunt)
+- Main positive and negative contactors
+- Cell balancing circuits
+- Cooling system controller
+
+### External Interfaces:
+- Vehicle Controller (VCU) via CAN bus
+- Charger via CAN bus
+- Instrument cluster for driver information
+- Diagnostic interface (OBD-II)
+
+## 3. Operating Modes
+
+1. **Standby Mode**: System powered, monitoring active, contactors open
+2. **Drive Mode**: Contactors closed, full monitoring, power delivery
+3. **Charge Mode**: Contactors closed, charge monitoring, balancing active
+4. **Sleep Mode**: Low power consumption, periodic wake-up
+5. **Fault Mode**: Safe state, contactors open, fault flagged
+6. **Service Mode**: For maintenance and diagnostics
+
+## 4. Environmental Conditions
+
+- Operating Temperature: -40°C to +85°C
+- Storage Temperature: -40°C to +105°C
+- Humidity: Up to 95% RH (non-condensing)
+- Vibration: ISO 16750-3 compliant
+- EMC: ISO 11452 series compliant
+
+## 5. Safety Requirements (Preliminary)
+
+Safety goals derived from HARA:
+- SG1: The BMS shall detect cell overvoltage within 10ms
+- SG2: The BMS shall isolate the battery within 50ms upon critical fault detection
+- SG3: The BMS shall prevent battery operation outside safe temperature range
+- SG4: The BMS shall maintain communication with VCU with <100ms timeout
+
+## 6. Constraints
+
+- Must interface with existing vehicle CAN network
+- Limited to 1A maximum current draw for BMS electronics
+- Must fit within allocated battery pack space
+- Must operate without external cooling for BMS electronics
+
+---
+
+## How to Use This File
+
+1. Copy this example and modify for your specific item
+2. Save in this folder: `AI_Agent-HARA_Assistant/item_definitions/`
+3. Use a descriptive filename matching your item name
+4. Then run: `extract functions from [your item name]`
+
+Example:
+- Save as: `Battery_Management_System.txt`
+- Run: `extract functions from Battery Management System`
