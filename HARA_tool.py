@@ -251,152 +251,146 @@ Extract the functions now:
 def apply_hazop_analysis(tool_input, cat):
     """
     Apply HAZOP guide words to identified functions to discover hazards.
-    
-    This tool:
-    - Takes each function from working memory
-    - Applies systematic HAZOP guide words (NO, MORE, LESS, EARLY, LATE, etc.)
-    - Identifies malfunctioning behaviors
-    - Describes hazardous events
-    
+    Now processes ONE FUNCTION AT A TIME to ensure full coverage of all guide words.
+    Outputs a complete, unified markdown table with all (function × guide word) combinations.
     Input: (Optional) Specific function to focus on. If empty, applies to ALL functions.
-    
-    Use this tool when user asks:
-    - "apply hazop"
-    - "perform hazop analysis"
-    - "identify hazards using hazop"
     """
-    print("✅ TOOL CALLED: apply_hazop_analysis")
+    print("✅ TOOL CALLED: apply_hazop_analysis (Per-Function Mode)")
     
     # Check for required data
     functions_text = cat.working_memory.get("item_functions", "")
     item_name = cat.working_memory.get("hara_item_name", "the system")
-
     if not functions_text:
         return """❌ **No functions found in working memory**
-
 Please first extract functions using:
 `extract functions from [item name]`
-
 Example: `extract functions from Battery Management System`
 """
 
-    log.info(f"🔍 Applying HAZOP analysis for {item_name}")
+    log.info(f"🔍 Applying HAZOP analysis for {item_name} (per-function mode)")
 
-    # Load HAZOP guide words
+    # Load HAZOP guide words (ALL of them)
     plugin_folder = os.path.dirname(__file__)
     guide_words_data = load_hazop_guidewords(plugin_folder)
     guide_words = guide_words_data.get("hazop_guide_words", {})
-
     if not guide_words:
         log.error("❌ No HAZOP guide words loaded!")
         return "❌ Error: HAZOP guide words template not found or empty"
+    
+    guide_word_list = list(guide_words.keys())
+    log.info(f"📚 Loaded {len(guide_word_list)} HAZOP guide words: {', '.join(guide_word_list)}")
 
-    log.info(f"📚 Loaded {len(guide_words)} HAZOP guide words")
+    # Parse functions (assume format: "1. Name: desc", "2. Name: desc", etc.)
+    function_lines = [line.strip() for line in functions_text.split('\n') if line.strip() and line[0].isdigit()]
+    functions = []
+    for line in function_lines:
+        # Extract function name (before colon or after number)
+        if ':' in line:
+            func = line.split(':', 1)[0].split('.', 1)[-1].strip()
+        else:
+            func = line.split('.', 1)[-1].strip()
+        if func:
+            functions.append(func)
 
-    # Build guide word summary for prompt
-    guide_words_summary = "\n".join([
-        f"**{word}**: {details['meaning']}\n   {details['description']}"
-        for word, details in guide_words.items()
-    ])
+    if not functions:
+        # Fallback: treat each line as a function
+        functions = [line.strip() for line in functions_text.split('\n') if line.strip()]
 
-    # Parse focus function if provided
+    if not functions:
+        return "❌ Could not parse any functions from the input."
+
+    log.info(f"⚙️ Found {len(functions)} functions to analyze")
+
+    # Determine scope
     focus_function = None
     if isinstance(tool_input, str) and tool_input.strip():
         focus_function = tool_input.strip()
     elif isinstance(tool_input, dict):
         focus_function = tool_input.get("focus_function")
 
-    scope_text = f"Focus on: {focus_function}" if focus_function else "Analyze ALL functions"
+    functions_to_process = [focus_function] if focus_function else functions
 
-    prompt = f"""You are a Functional Safety Engineer performing systematic HAZOP analysis for {item_name}.
+    all_hazop_rows = []
 
-**HAZOP Guide Words:**
-{guide_words_summary}
+    for func in functions_to_process:
+        if focus_function and func != focus_function:
+            continue
 
-**Functions to Analyze:**
-{functions_text}
+        log.info(f"  → Analyzing function: {func}")
 
-**Scope:** {scope_text}
+        # Build prompt for this single function + all guide words
+        guide_words_str = ", ".join(guide_word_list)
+        prompt = f"""You are a Functional Safety Engineer performing HAZOP analysis per ISO 26262 for {item_name}.
 
-**Task:** For EACH function, apply EACH applicable guide word systematically to identify potential hazards.
+**Function to Analyze:**
+{func}
 
-**Analysis Process:**
-1. Take a function
-2. Apply guide word (e.g., NO, MORE, LESS, EARLY, LATE, REVERSE, etc.)
-3. Determine if this deviation is credible
-4. If yes, describe the malfunctioning behavior
-5. Identify the resulting hazardous event
-6. Repeat for all guide words
+**HAZOP Guide Words to Apply (use ALL):**
+{guide_words_str}
 
-**Output Format:**
+**Instructions:**
+1. For **each guide word**, generate ONE row with:
+   - **Malfunction**: [Function] + [guide word] → e.g., "No voltage monitoring"
+   - **Hazard**: Plausible hazardous event at vehicle/item level (e.g., "Battery fire")
+   - **Severity Class**: S3, S2, S1, or S0
+   - **Rationale**: 1–2 sentences explaining severity
+2. Only include hazards with **S1 or higher**.
+3. Be **concise**: max 10 words per cell except rationale.
+4. Output ONLY a markdown table with these columns:
+   | Function | HAZOP Guideword | Malfunction | Hazard | Severity Class | Rationale for Chosen Severity |
 
-**Output Format:**
-List each malfunction on a new line in a table format with the following columns:
-1st Column title: **Function**
-1st Column content: [Function description]
-2nd Column title : **Guide Word** 
-2nd Column content : NO (function not performed)
-3rd Column title : **Malfunctioning Behavior**
-3rd Column content : [What goes wrong]
-4th Column title : **Possible Causes**
-4th Column content : [Why could this happen - optional]
-5th Column title : **Hazardous Event**
-5th Column content : [Why could this happen - optional]
-6th Column title :  **Preliminary Severity** 
-6th Column content : [S1/S2/S3 with brief reason]
-
-
-Do the same for the other malfunctions, for example:
-1st Column content: [Function description]
-2nd Column content : NO (function not performed)
-3rd Column content : [What goes wrong]
-4th Column content : [Why could this happen - optional]
-5th Column content : [Why could this happen - optional]
-6th Column content : [S1/S2/S3 with brief reason]
-
-
-...
-
-*(Continue for all applicable functions and guide words)*
-
-
-**Important:**
-- Only include deviations that are credible and could lead to hazardous situations
-- Skip guide words that don't apply to a specific function
-- Be specific about the hazardous event (what actual harm could occur)
-
-**Begin HAZOP Analysis:**
+**Begin table now (no header explanation, just the table):**
 """
 
-    try:
-        hazop_analysis = cat.llm(prompt).strip()
-        
-        # Store HAZOP results in working memory
-        cat.working_memory["hazop_analysis"] = hazop_analysis
-        cat.working_memory["hara_stage"] = "hazop_completed"
+        try:
+            response = cat.llm(prompt).strip()
+            # Extract table rows (skip header/separator)
+            lines = response.split('\n')
+            data_rows = []
+            for line in lines:
+                if line.startswith('|') and not any(x in line for x in ['---', 'Function', 'Guideword']):
+                    data_rows.append(line)
+            all_hazop_rows.extend(data_rows)
+            log.info(f"    → Generated {len(data_rows)} hazard rows for '{func}'")
+        except Exception as e:
+            log.error(f"⚠️ Error analyzing function '{func}': {e}")
+            continue
 
-        log.info("✅ HAZOP analysis completed and stored in working memory")
-        
-        result = f"""✅ **HAZOP Analysis Completed for {item_name}**
+    if not all_hazop_rows:
+        return "❌ No HAZOP results generated. Try refining function descriptions."
 
-{hazop_analysis}
+    # Build final table with sequential IDs
+    header = "| ID | Function | HAZOP Guideword | Malfunction | Hazard | Severity Class | Rationale for Chosen Severity |"
+    separator = "|----|----------|------------------|-------------|--------|----------------|-------------------------------|"
+    final_rows = []
+    for i, row in enumerate(all_hazop_rows, 1):
+        # Insert ID at start of row
+        content = row.strip('|').split('|')
+        if len(content) >= 6:
+            new_row = f"| HAZ-{i:03d} | {content[0]} | {content[1]} | {content[2]} | {content[3]} | {content[4]} | {content[5]} |"
+            final_rows.append(new_row)
+
+    full_table = '\n'.join([header, separator] + final_rows)
+
+    # Store in working memory
+    cat.working_memory["hazop_analysis"] = full_table
+    cat.working_memory["hara_stage"] = "hazop_completed"
+    cat.working_memory["document_type"] = "hazop_analysis"
+    cat.working_memory["system_name"] = item_name
+
+    log.info(f"✅ HAZOP analysis completed: {len(final_rows)} total hazards")
+
+    result = f"""✅ **Complete HAZOP Analysis for {item_name}**
+{full_table}
 
 ---
-
+**Summary:** {len(final_rows)} hazards generated across {len(functions_to_process)} function(s).
 **Next Steps:**
 1. **Assess specific hazards:** `assess hazard [description]`
-   Example: `assess hazard: Battery overcharge due to no voltage monitoring`
-   
-2. **Generate complete HARA table:** `generate hara table`
-
-3. **Review and refine:** Ask questions about specific hazards or add more
+2. **Generate HARA table:** `generate hara table`
+3. **Export full report** via OutputFormatter plugin
 """
-        return result
-
-    except Exception as e:
-        log.error(f"❌ Error during HAZOP analysis: {e}")
-        return f"❌ Error during HAZOP analysis: {str(e)}"
-
+    return result
 
 @tool(return_direct=True)
 def assess_hazard_severity_exposure_controllability(tool_input, cat):
@@ -579,7 +573,7 @@ You can also run these steps in sequence:
 **Task:** Create a complete, professional HARA table in markdown format.
 
 **Required Columns:**
-| Hazard ID | Function | Malfunctioning Behavior | Hazardous Event | Operational Situation | Severity (S) | Exposure (E) | Controllability (C) | ASIL | Safety Goal |
+| Hazard ID | Function | Malfunctioning Behavior | Hazardous Event | Operational Situation | Severity (S) | Exposure (E) | Controllability (C) | ASIL | Safety Goal | Safe State |
 
 **Instructions:**
 1. Parse the HAZOP analysis to identify distinct hazard scenarios
@@ -591,6 +585,7 @@ You can also run these steps in sequence:
    - Define operational situation (e.g., "Highway driving", "Fast charging")
    - Assess S, E, C based on ISO 26262-3:2018 criteria
    - Calculate ASIL using the standard matrix
+   - Formulate the Safe state (a condition where the system operates without posing an unacceptable risk, even if a malfunction occurs.)
 
 3. **CRITICAL - Safety Goal Formulation (ISO 26262-3 Clause 6.4.6):**
    Safety Goals must follow these strict guidelines:
@@ -612,7 +607,7 @@ You can also run these steps in sequence:
    - Combine multiple goals into one
    
    **Safety Goal Format:**
-   "The [system/item] shall [prevent/avoid/mitigate/ensure] [hazardous event] [under conditions]. (ASIL X, Safe State: [state], FTTI: [time])"
+   "The [hazardous event] shall be [prevented/avoided/mitigated] [under conditions]. (ASIL X, Safe State: [state], FTTI: [time])"
    
    **Good Examples:**
    - "Avoid thermal runaway due to cell overvoltage. (ASIL D, Safe State: Battery isolated, FTTI: 100ms)"
@@ -626,10 +621,8 @@ You can also run these steps in sequence:
    - ❌ "The wiper controller shall activate wipers within 500ms upon rain sensor signal" (specifies how, not what)
    
 4. Be consistent and professional
-5. Output ONLY the markdown table, no additional text
-
-**Example Row:**
-| HAZ-001 | Monitor cell voltage | Cell voltage monitoring inactive (NO) | Cell overcharge leading to thermal runaway | Fast charging in hot ambient temperature | S3 | E2 | C3 | D | The system shall prevent cell overvoltage to avoid thermal runaway and fire. (ASIL D, Safe State: Battery isolated from charger, FTTI: 100ms) |
+5. 4. Output ONLY a markdown table with these columns:
+   | Hazard ID | Function | Malfunctioning Behavior | Hazardous Event | Operational Situation | Severity (S) | Exposure (E) | Controllability (C) | ASIL | Safety Goal |
 
 **Generate the HARA Table:**
 """
