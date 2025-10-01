@@ -1,0 +1,48 @@
+{
+  "hazop_guide_words": {
+    "NO": {
+      "meaning": "Complete absence of function or parameter",
+      "description": "The function is not performed at all, or the parameter is zero/absent."
+    },
+    "MORE": {
+      "meaning": "Excessive quantity, magnitude, or intensity",
+      "description": "The function is performed with greater magnitude than intended (e.g., higher voltage, faster speed)."
+    },
+    "LESS": {
+      "meaning": "Reduced quantity, magnitude, or intensity",
+      "description": "The function is performed with insufficient magnitude (e.g., lower pressure, slower response)."
+    },
+    "REVERSE": {
+      "meaning": "Opposite direction, action, or logic",
+      "description": "The function operates in the reverse direction or with inverted logic (e.g., braking instead of accelerating)."
+    },
+    "PART_OF": {
+      "meaning": "Incomplete or partial function",
+      "description": "Only a portion of the intended function is performed (e.g., monitoring only some sensors)."
+    },
+    "AS_WELL_AS": {
+      "meaning": "Additional unintended function",
+      "description": "An extra, unintended function is performed alongside the intended one (e.g., emitting heat during normal operation)."
+    },
+    "OTHER_THAN": {
+      "meaning": "Substitution or incorrect specification",
+      "description": "The function is performed with wrong parameters, components, or logic (e.g., wrong sensor used, incorrect algorithm)."
+    },
+    "EARLY": {
+      "meaning": "Premature execution or occurrence",
+      "description": "The function occurs before its intended time or condition (e.g., contactor opens too soon)."
+    },
+    "LATE": {
+      "meaning": "Delayed execution or occurrence",
+      "description": "The function occurs after its intended time or condition (e.g., warning signal delayed)."
+    },
+    "BEFORE": {
+      "meaning": "Incorrect sequence (premature relative to another function)",
+      "description": "A function occurs before another function it should follow (e.g., system powers on before safety check)."
+    },
+    "AFTER": {
+      "meaning": "Incorrect sequence (delayed relative to another function)",
+      "description": "A function occurs after another function it should precede (e.g., shutdown initiated after fault propagation)."
+    }
+  }
+}

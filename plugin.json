@@ -1,0 +1,11 @@
+{
+  "name": "[Kineton] ISO 26262 HARA Assistant",
+  "version": "0.0.1",
+  "description": "A plugin that assist the user to develop an HARA",
+  "author_name": "Tonino De Nigris",
+  "author_url": "https://github.com/tondeni",
+  "plugin_url": "https://github.com/tondeni/AI_Agent-OutputFormatter",
+  "tags": "ISO26262, FuSa, Functional Safety",
+  "thumb": "https://github.com/tondeni/AI_Agent-OutputFormatter/blob/master/assets/FuSa_AI_Agent_Plugin_logo.png?raw=true"
+  
+}
