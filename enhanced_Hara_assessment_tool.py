@@ -9,6 +9,7 @@ import re
 from datetime import datetime
 from cat.mad_hatter.decorators import tool
 from cat.log import log
+from .exposure_assessment_tool import get_exposure_guidance
 
 try:
     import PyPDF2
@@ -37,7 +38,6 @@ def load_hazop_guidewords(plugin_folder):
         log.error(f"Error loading HAZOP guide words: {e}")
         return {"hazop_guide_words": {}}
 
-
 def load_operational_situations(plugin_folder):
     """Load operational situations database from JSON file."""
     template_path = os.path.join(plugin_folder, "templates", "operational_situations.json")
@@ -50,7 +50,6 @@ def load_operational_situations(plugin_folder):
     except Exception as e:
         log.error(f"Error loading operational situations: {e}")
         return None
-
 
 def find_item_definition(cat, item_name):
     """
@@ -122,6 +121,114 @@ def find_item_definition(cat, item_name):
     log.warning(f"❌ No Item Definition found for '{item_name}'")
     return None
 
+def get_severity_guidance():
+    """Return detailed severity guidance based on ISO 26262-3 Annex B.2"""
+    return """
+**ISO 26262-3:2018 Severity Classification (Table 1 + Annex B.2):**
+
+**S0: No injuries**
+- AIS 0 and less than 10% probability of AIS 1-6
+- Examples: Minor property damage, bumps with roadside infrastructure, light grazing damage
+
+**S1: Light and moderate injuries**
+- More than 10% probability of AIS 1-6 (but not S2 or S3)
+- AIS 1: Light injuries (skin wounds, muscle pains, whiplash)
+- AIS 2: Moderate injuries (deep flesh wounds, concussion <15min, uncomplicated fractures)
+- Examples:
+  * Rear/front collision with very low speed
+  * Side impact with tree at very low speed
+  * Minor pedestrian/bicycle accident
+
+**S2: Severe and life-threatening injuries (survival probable)**
+- More than 10% probability of AIS 3-6 (but not S3)
+- AIS 3: Severe injuries (skull fractures without brain injury, spinal dislocations below C4 without cord damage)
+- AIS 4: Severe life-threatening (concussion up to 12h unconsciousness, paradoxical breathing)
+- Examples:
+  * Front collision with passenger compartment deformation
+  * Side impact with tree at medium speed
+  * Rear/front collision at medium speed
+
+**S3: Life-threatening (survival uncertain) or fatal injuries**
+- More than 10% probability of AIS 5-6
+- AIS 5: Critical injuries (spinal fractures below C4 WITH cord damage, >12h unconsciousness, intracranial bleeding)
+- AIS 6: Fatal injuries (cervical fractures above C3 with cord damage, critical open wounds of body cavities)
+- Examples:
+  * High-speed collisions
+  * Rollover accidents
+  * Unprotected occupant ejection
+
+**Assessment Approach:**
+1. Consider the operational situation (speed, traffic density, vehicle dynamics)
+2. Estimate the collision energy/impact forces
+3. Consider occupant protection (seatbelts, airbags - assume functioning unless the item affects them)
+4. Assess harm to ALL persons at risk: driver, passengers, pedestrians, other vehicles
+5. Use the WORST CASE injury among all persons for classification
+6. Consider reasonable sequences of events, not extreme outliers
+"""
+
+def get_controllability_guidance():
+    """Return detailed controllability guidance based on ISO 26262-3 Annex B.4"""
+    return """
+**ISO 26262-3:2018 Controllability Classification (Table 3 + Annex B.6):**
+
+**C0: Controllable in general**
+- >99% of drivers can avoid harm
+- Simple, routine driver actions sufficient
+- Clear warning with ample time to react (>3s)
+- Examples:
+  * Distracting events (unexpected radio volume increase)
+  * Unavailability of non-critical driver assistance (adaptive cruise control)
+  * Unintended window closing (remove arm from window)
+  * Loss of propulsion in garage (put car in park)
+
+**C1: Simply controllable**
+- >99% of drivers can avoid harm with minor additional effort
+- Adequate warning time (1-3s)
+- Straightforward corrective action required
+- Examples:
+  * Unintended closing of window while driving (remove arm)
+  * Blocked steering column from standstill (brake to stop vehicle)
+  * Inadvertent opening of bus door with passenger standing (passenger grabs handrail)
+
+**C2: Normally controllable**
+- 90% to 99% of drivers can avoid harm
+- Limited warning time (0.5-1s)
+- Requires skilled driver action
+- Scenario conditions moderately impair controllability
+- Examples:
+  * Failure of ABS during emergency braking (maintain intended path)
+  * Propulsion failure at high lateral acceleration (maintain path)
+  * Excessive trailer swing during braking (counter-steer and brake)
+
+**TEST CRITERION for C2:**
+Per ISO 26262 and RESPONSE 3 methodology:
+- 20 valid test subjects
+- If all 20 pass the scenario, achieves 85% controllability with 95% confidence
+- This provides adequate evidence for C2 classification
+
+**C3: Difficult to control or uncontrollable**
+- <90% of drivers can avoid harm
+- No or very short warning (<0.5s)
+- Requires exceptional driver skill
+- Scenario conditions severely impair controllability
+- Physical limitations prevent effective response
+- Examples:
+  * Failure of brakes at speed (steer away from objects)
+  * Faulty airbag deployment at high speed (maintain path after airbag blocks vision)
+  * Functions with high automation where driver not in loop (no attempt to maintain path)
+  * Loss of steering control at high speed
+
+**Assessment Considerations:**
+1. **Driver Profile:** Average driver with appropriate training and license, in appropriate condition
+2. **Warning Time:** How much time does driver have to react?
+3. **Required Action Complexity:** Simple vs. complex corrective maneuvers
+4. **Scenario Factors:** Speed, visibility, road conditions, traffic density
+5. **Available Controls:** What means does driver have to regain control?
+6. **Surprise Factor:** Is the hazard expected or completely unexpected?
+7. **Multi-Vehicle:** Consider actions of other traffic participants if relevant
+
+**NOTE:** Controllability is assessed for the vehicle WITH the malfunctioning item, assuming other systems function correctly (unless the item affects them).
+"""
 
 def extract_and_calculate_asil(assessment_text):
     """Extract S, E, C from assessment text and calculate ASIL."""
@@ -366,7 +473,7 @@ This workflow ensures compliance with:
 @tool(return_direct=True)
 def extract_functions_from_item_definition(tool_input, cat):
     """
-    Extracts functions from the Item Definition.
+    Extracts **safety-relevant functions** from the Item Definition for HARA/HAZOP analysis.
     The Item Definition can be:
     - In working memory (after generation)
     - Saved in plugin folders (item_definitions/)
@@ -414,32 +521,57 @@ Or save it to: `plugins/AI_Agent-HARA_Assistant/item_definitions/[item_name].txt
 
     log.info(f"📄 Item Definition found, length: {len(item_def_content)} characters")
 
-    # Build prompt to extract functions
+    # Build prompt to extract the set of most relevant functions
     prompt = f"""You are a Functional Safety Engineer analyzing an Item Definition for HARA development.
 
 **Item Definition for {item_name}:**
 {item_def_content[:5000]}
 
-**Task:** Extract and list the primary functions of the {item_name} from the Item Definition.
+**CRITICAL TASK:** Extract and list ONLY the **4-5 MOST CRITICAL safety-relevant functions** of the {item_name}.
 
-**Instructions:**
-- Focus on functional behaviors of Item described in sections like "Functionality", "Functions", etc.
-- Each function should be a distinct capability or behavior
-- Format each function clearly and concisely
-- Include what the function does, not how it does it
-- Examples of functions:
-  * "Monitor battery cell voltages"
-  * "Calculate state of charge (SoC)"
-  * "Control main contactor opening/closing"
-  * "Communicate status via CAN bus"
+**Selection Criteria (Prioritize in this order):**
+
+1. **Highest Severity Impact:** Functions whose failure could lead to:
+   - Life-threatening consequences (fire, explosion, electric shock, collision)
+   - Severe injuries or vehicle loss of control
+   - Critical system failures affecting multiple vehicle systems
+
+2. **Direct Safety Control:** Functions that:
+   - Directly control safety-critical actuators (contactors, relays, brakes, steering)
+   - Prevent hazardous states (overcharge, thermal runaway, overvoltage)
+   - Implement emergency shutdown or safe state transitions
+
+3. **Safety-Critical Monitoring:** Functions monitoring parameters where:
+   - Out-of-range values directly lead to hazards
+   - Real-time detection prevents propagation of faults
+   - Examples: cell voltage limits, temperature limits, isolation monitoring
+
+**IMPORTANT Filtering Rules:**
+- **Focus ONLY on functions active during normal vehicle operation** (driving, parking, charging)
+- **EXCLUDE:** Diagnostic functions, self-tests, calibration modes, service functions, data logging, UI updates
+- **Group similar functions:** If multiple functions serve the same safety purpose, merge them into one (e.g., "Monitor cell 1 voltage, Monitor cell 2 voltage" → "Monitor battery cell voltages")
+- **Omit regulatory compliance functions** unless they directly prevent hazards (e.g., "Comply with EMC standard" → exclude)
+
+**LIMIT:** Select EXACTLY 4-5 functions maximum. If there are more candidates, choose those with:
+- Highest consequence of failure (S3 > S2 > S1)
+- Most direct path from malfunction to hazard
+- Least controllability by driver if failed
 
 **Output Format:**
-List each function on a new line with a brief description:
-1. [Function Name]: [Brief description]
+List ONLY 4-5 functions, numbered:
+1. [Function Name]: [Brief description - what it does and why it's safety-critical]
 2. [Function Name]: [Brief description]
 ...
+(Maximum 5 functions)
 
-Extract the functions now:
+**Example for Battery Management System:**
+1. Monitor battery cell voltages: Prevents overcharge/over-discharge leading to thermal runaway
+2. Control main contactors: Isolates high voltage to prevent electric shock and fire
+3. Calculate State of Charge (SoC): Prevents unexpected loss of propulsion
+4. Monitor battery temperature: Prevents thermal runaway by detecting overheat conditions
+5. Implement emergency shutdown: Transitions to safe state upon critical fault detection
+
+Extract the 4-5 most critical safety-relevant functions now:
 """
 
     try:
@@ -462,21 +594,19 @@ Extract the functions now:
 ## Workflow Progress: 1/5 Steps Complete
 
 **Completed:**
-- Step 1: Functions extracted
+- ✅ Step 1: Functions extracted
 
 **Next Steps:**
 
-Step 2: `apply hazop analysis`
+➡️ Step 2: `apply hazop analysis`
 - Applies HAZOP guide words to identify hazards
 - Assesses Severity (S) for each hazard
 - Output: HAZOP table with malfunctions and hazardous events
 
-**Full HARA Workflow:**
-1. Extract functions (DONE)
-2. Apply HAZOP analysis (NEXT)
-3. Assess exposure for all hazards
-4. Generate HARA table
-5. Derive detailed safety goals
+**Remaining Steps:**
+3. ❓Assess exposure for all hazards
+4. ❓Generate HARA table
+5. ❓Derive detailed safety goals
 
 **Tips:** 
 - You can view the complete workflow anytime by asking: "explain hara workflow"
@@ -640,20 +770,20 @@ Please first extract functions using: `extract functions from item definition`""
 **Summary:** {len(final_rows)} hazards identified across {len(functions_to_process)} function(s)
 
 **Completed:**
-- Step 1: Functions extracted
-- Step 2: HAZOP analysis performed (Severity assessed)
+- ✅ Step 1: Functions extracted
+- ✅ Step 2: HAZOP analysis performed (Severity assessed)
 
 **Next Steps:**
 
-Step 3: `assess exposure for all hazards`
+➡️ Step 3: `assess exposure for all hazards`
 - Selects relevant driving scenarios for each hazard
 - Combines basic operational situations
 - Calculates Exposure (E) using MIN rule
 - Output: Exposure assessment table
 
 **Remaining Steps:**
-4. Generate HARA table (add Controllability, calculate ASIL)
-5. Derive detailed safety goals (for ASIL A/B/C/D)
+4.❓ Generate HARA table (add Controllability, calculate ASIL)
+5.❓ Derive detailed safety goals (for ASIL A/B/C/D)
 
 **Tips:** 
 - To see your current progress: "explain hara workflow"
@@ -753,7 +883,6 @@ Please ensure `operational_situations.json` exists in the `templates/` folder.
     
     return result
 
-
 @tool(return_direct=True)
 def assess_hazard_with_situation(tool_input, cat):
     """
@@ -809,117 +938,136 @@ Use `assess hazard: [description]` for basic assessment.
     log.info(f"📊 Performing comprehensive HARA assessment for: {hazard_description[:100]}...")
 
     # Build comprehensive assessment prompt
-    prompt = f"""You are a Functional Safety Engineer performing comprehensive HARA assessment per ISO 26262-3:2018 for {item_name}.
+    prompt = f"""You are a Functional Safety Engineer performing comprehensive HARA per ISO 26262-3:2018 for {item_name}.
 
-**Hazardous Event to Assess:**
-{hazard_description}
+**Hazardous Event:** {hazard_description}
 
 **Available Operational Situations Database:**
 {json.dumps(situations_data["basic_scenarios"], indent=2)[:6000]}
 
-**Your Task:** Perform a complete, structured HARA assessment following ISO 26262-3:2018.
+---
+
+## CRITICAL: ISO 26262-3:2018 Classification Criteria
+
+{get_severity_guidance()}
+
+{get_exposure_guidance()}
+
+{get_controllability_guidance()}
 
 ---
 
-## Step 1: Operational Situation Selection
+## Your Assessment Task:
 
-Analyze when/where this hazard is most likely to occur. Select 1-3 relevant scenarios from the database.
+### Step 1: Operational Situation Selection
+Select 2-4 relevant basic scenarios from the database that match when/where this hazard occurs.
 
-**Selected Scenarios:**
-- Scenario 1: [ID] - [Name] (Exposure: [E level])
-  - Justification: [Why this scenario is relevant]
-- Scenario 2: [ID] - [Name] (Exposure: [E level]) *(if applicable)*
-  - Justification: [Why this scenario is relevant]
+**Output:**
+- Scenario 1: [ID] - [Name] (Base Exposure: [E level])
+  Justification: [Why relevant to this hazard]
+- Scenario 2: [ID] - [Name] (Base Exposure: [E level])
+  Justification: [Why relevant]
+(Continue for all selected scenarios)
 
-**Combined Operational Situation:**
+**Combined Situation:**
 - Name: [Descriptive name]
-- Description: [Full description of the combined situation]
-- Base Exposure: [Minimum E level from selected scenarios - use E0, E1, E2, E3, or E4]
+- Combined Exposure Calculation: MIN([E values]) = [Result]
+- Rationale: [Why this combination represents when hazard occurs]
 
 ---
 
-## Step 2: Exposure (E) Assessment
+### Step 2: Severity Assessment (ISO 26262-3 Table 1 + Annex B.2)
 
-Based on the selected operational situation(s):
+**CRITICAL STEPS:**
+1. Identify the operational situation context (speed, traffic, vehicle dynamics)
+2. Estimate collision type and energy if applicable
+3. Consider occupant protection systems (assume functioning unless item affects them)
+4. Assess ALL persons at risk: driver, passengers, pedestrians, other vehicles
+5. Map to AIS injury scale
+6. Select HIGHEST severity among all persons
 
-**Exposure Level:** E[0/1/2/3/4]
+**Severity: S[0/1/2/3]**
 
-**Justification:**
-- Frequency of operational situation: [How often does this situation occur?]
-- Duration of exposure: [How long is the system in this situation?]
-- Statistical data consideration: [Any relevant data supporting this classification]
-
-**ISO 26262-3:2018 Exposure Criteria:**
-- E0: < 0.001% of operating time
-- E1: 0.001% to 0.1%
-- E2: 0.1% to 1%
-- E3: 1% to 10%
-- E4: > 10% of operating time
-
----
-
-## Step 3: Severity (S) Assessment
-
-Consider the potential harm in the context of the operational situation:
-
-**Severity Level:** S[0/1/2/3]
-
-**Justification:**
-- Type of harm: [Describe potential injuries]
-- Affected parties: [Driver, passengers, pedestrians, other road users]
-- Context impact: [How does the operational situation affect severity?]
-- Vehicle dynamics: [Speed, collision energy, etc.]
-
-**ISO 26262-3:2018 Severity Criteria:**
-- S0: No injuries
-- S1: Light and moderate injuries (no hospitalization)
-- S2: Severe injuries (survival probable, hospitalization required)
-- S3: Life-threatening or fatal injuries
+**Detailed Rationale:**
+- Operational context: [Speed, traffic density, vehicle state]
+- Potential collision scenario: [What type of accident could occur]
+- Expected injuries: [AIS classification for each person type]
+- Worst case person: [Who faces highest severity]
+- Why this S class: [Specific justification with AIS reference]
 
 ---
 
-## Step 4: Controllability (C) Assessment
+### Step 3: Exposure Assessment (ISO 26262-3 Table 2 + Annex B.3)
 
-Consider driver/person ability to control the situation:
+**Method Selection:**
+- [ ] Duration-based (hazard present throughout condition)
+- [ ] Frequency-based (hazard triggered by events)
 
-**Controllability Level:** C[0/1/2/3]
+**Exposure: E[0/1/2/3/4]**
 
-**Justification:**
-- Warning time available: [How much time to react?]
-- Required driver action: [What must the driver do?]
-- Context factors: [How does the situation affect controllability?]
-- Statistical controllability: [% of drivers who could control]
-
-**ISO 26262-3:2018 Controllability Criteria:**
-- C0: Controllable in general (>99% of drivers)
-- C1: Simply controllable (>99%, minor effort)
-- C2: Normally controllable (>90%, corrective action needed)
-- C3: Difficult to control or uncontrollable (<90%)
+**Detailed Rationale:**
+- Combined operational situation: [From Step 1]
+- Duration/Frequency estimate: [Percentage of operating time OR times per year]
+- Statistical basis: [Why this E class is appropriate]
+- Combination rule applied: [If multiple scenarios, show MIN calculation]
 
 ---
 
-## Step 5: ASIL Calculation
+### Step 4: Controllability Assessment (ISO 26262-3 Table 3 + Annex B.6)
 
-Based on S, E, C values per ISO 26262-3:2018 Table 4:
+**CRITICAL FACTORS TO ASSESS:**
+1. Warning time available: [How much time to react?]
+2. Required driver action: [What must driver do?]
+3. Action complexity: [Simple routine vs. skilled maneuver]
+4. Scenario impairment: [How do conditions affect controllability?]
+5. Driver capability: [What % of average drivers can perform this?]
 
-**Calculated ASIL:** [QM/A/B/C/D]
+**Controllability: C[0/1/2/3]**
+
+**Detailed Rationale:**
+- Warning characteristics: [Time, clarity, type of warning if any]
+- Required action: [Specific control inputs needed]
+- Typical driver capability: [Estimated % who can avoid harm]
+- Scenario factors: [Speed, visibility, road conditions affecting controllability]
+- Why this C class: [Justify based on >99%, 90-99%, or <90% capability]
+
+**Statistical Justification:**
+[For C2: Could this pass a 20-subject test per RESPONSE 3?]
+[For C1: Engineering judgment that >99% can control]
+[For C3: Why <90% can control]
 
 ---
 
-## Step 6: Safety Goal Formulation
+### Step 5: ASIL Determination (ISO 26262-3 Table 4)
+
+**Input Values:**
+- S = S[X] (from Step 2)
+- E = E[X] (from Step 3) [NOTE: E4 maps to E3 for ASIL calculation]
+- C = C[X] (from Step 4)
+
+**ASIL Calculation:**
+Using ISO 26262-3:2018 Table 4:
+[Show the table lookup]
+
+**Result: ASIL [QM/A/B/C/D]**
+
+---
+
+### Step 6: Safety Goal Formulation
 
 **Safety Goal:**
-[The [hazardous event] shall be [prevented/avoided/mitigated] [conditions].]
+[Action verb] [hazardous event description] [during operational context]. (ASIL [X])
 
 **Safe State:**
-[Description of safe state to be achieved]
+[Specific system condition ensuring safety - measurable and verifiable]
 
-**Fault-Tolerant Time Interval (FTTI):**
-[X ms/seconds, or N/A if not time-critical]
+**FTTI (if applicable):**
+[Time in ms/s] OR N/A
+**Justification:** [Why this timing based on hazard dynamics]
 
 ---
 
-Provide your complete assessment now following this exact structure:
+**Provide your complete assessment following this exact structure:**
 """
 
     try:
@@ -973,7 +1121,6 @@ Provide your complete assessment now following this exact structure:
     except Exception as e:
         log.error(f"❌ Error in comprehensive HARA assessment: {e}")
         return f"❌ Error in assessment: {str(e)}"
-
 
 @tool(return_direct=True)
 def assess_hazard_severity_exposure_controllability(tool_input, cat):
@@ -1103,7 +1250,6 @@ Provide your assessment:
         log.error(f"❌ Error assessing hazard S/E/C: {e}")
         return f"❌ Error assessing hazard: {str(e)}"
 
-
 @tool(return_direct=True)
 def generate_hara_table(tool_input, cat):
     """
@@ -1165,94 +1311,108 @@ def generate_hara_table(tool_input, cat):
 **Exposure Assessments (with Driving Scenarios and E):**
 {exposure_assessments[:5000]}
 
-**Task:** Generate a complete HARA table by adding Controllability (C) assessment and calculating ASIL.
+**CRITICAL TASK:** Generate a complete HARA table with **ALL 12 COLUMNS**. Do not omit any column.
 
-**Required Table Columns (12 total):**
+---
+
+## REQUIRED TABLE FORMAT (MANDATORY - ALL 12 COLUMNS):
 
 | Hazard ID | Function | Malfunctioning Behavior | Hazardous Event | Operational Situation | Severity (S) | Exposure (E) | Controllability (C) | ASIL | Safety Goal | Safe State | FTTI |
 
-**Instructions:**
+---
 
-1. **Use Existing Data:**
-   - Hazard ID, Function, Malfunction, Hazardous Event, Severity (S): From HAZOP table
-   - Operational Situation, Exposure (E): From Exposure Assessment table
-   - Match hazards by Hazard ID (HAZ-001, HAZ-002, etc.)
+## COLUMN-BY-COLUMN INSTRUCTIONS:
 
-2. **NEW: Assess Controllability (C) for Each Hazard:**
-   Consider the driving scenario context to assess controllability:
-   
-   **C0**: Controllable in general (>99% of drivers, normal skills)
-   - Driver has clear warning
-   - Simple, intuitive action required
-   - Ample time to react (>3s)
-   - Scenario conditions don't impair controllability
-   
-   **C1**: Simply controllable (>99%, minor additional effort)
-   - Driver has adequate warning
-   - Straightforward action required
-   - Sufficient time to react (1-3s)
-   - Scenario conditions slightly impact controllability
-   
-   **C2**: Normally controllable (>90%, corrective action needed)
-   - Limited warning time
-   - Requires skilled driver action
-   - Short reaction time (0.5-1s)
-   - Scenario conditions moderately impair controllability
-   
-   **C3**: Difficult to control or uncontrollable (<90%)
-   - No or very short warning time (<0.5s)
-   - Requires exceptional driver skill
-   - Scenario conditions severely impair controllability (low visibility, ice, high speed)
-   - Physical limitations prevent effective response
+### Columns 1-5: Copy from HAZOP Analysis
+- **Hazard ID**: HAZ-001, HAZ-002, etc. (copy exactly)
+- **Function**: Copy from HAZOP
+- **Malfunctioning Behavior**: Copy from HAZOP
+- **Hazardous Event**: Copy from HAZOP
+- **Operational Situation**: Copy from Exposure Assessment (driving scenario)
 
-3. **Calculate ASIL:**
-   Use ISO 26262-3:2018 Table 4 (ASIL determination matrix)
-   - Note: E4 maps to E3 for ASIL calculation
-   - Verify calculations are correct
+### Column 6: Severity (S) - COPY FROM HAZOP
+- **CRITICAL**: Extract S0/S1/S2/S3 from HAZOP table
+- **Do NOT calculate** - this was already assessed in Step 2
+- **Copy the exact value** (e.g., "S3", "S2")
 
-4. **Formulate Safety Goal (preliminary):**
-   - **CRITICAL FORMAT**: Start directly with action verb - DO NOT include "The [system] shall"
-   - Action verbs: Avoid, Prevent, Ensure, Maintain, Mitigate, Limit
-   - Result-oriented: Focus on WHAT to achieve
-   - Do NOT include ASIL, safe state, or FTTI in this column
-   - Keep concise (one sentence)
-   
-   **Correct Format Examples:**
-   ✅ "Avoid cell overvoltage to prevent thermal runaway"
-   ✅ "Prevent unintended battery disconnection during operation"
-   ✅ "Ensure driver visibility during adverse weather"
-   ✅ "Maintain safe battery temperature during charging"
-   
-   **WRONG Format Examples:**
-   ❌ "The Battery Management System shall prevent cell overvoltage..."
-   ❌ "The BMS shall avoid thermal runaway..."
-   ❌ "System shall ensure visibility..."
+### Column 7: Exposure (E) - COPY FROM EXPOSURE ASSESSMENT
+- Extract E0/E1/E2/E3/E4 from Exposure Assessment table
+- Match by Hazard ID
+- Note: E4 will map to E3 for ASIL calculation
 
-5. **Define Safe State:**
-   - Specific system condition ensuring safety
-   - Measurable and verifiable
-   - Examples: "Battery isolated", "Power limited to 50%", "System shutdown"
+### Column 8: Controllability (C) - NEW ASSESSMENT
+Consider the operational situation (driving scenario) to assess:
 
-6. **Specify FTTI:**
-   - Format: "50ms", "1s", "N/A"
-   - ASIL D: Typically 50-200ms for critical hazards
-   - ASIL C: Typically 100-500ms
-   - ASIL B/A: Typically 500ms-2s or N/A
-   - QM: N/A
-   - Consider scenario dynamics (e.g., high-speed → shorter FTTI)
+- **C0**: >99% controllable (clear warning, simple action, >3s reaction time)
+- **C1**: >99% controllable with minor effort (adequate warning, 1-3s reaction time)
+- **C2**: >90% controllable (skilled action needed, 0.5-1s reaction time)
+- **C3**: <90% controllable (no warning, <0.5s reaction, or physically impossible)
 
-7. **Table Format:**
-   - Start with header row
-   - Data rows (one per hazard)
-   - Ensure 12 columns in every row
+**Context matters:**
+- High-speed + adverse weather → C3 (difficult to control)
+- Low-speed + normal conditions → C0 or C1 (easy to control)
 
-**CRITICAL: Ensure Controllability assessment considers the specific driving scenario context.**
+### Column 9: ASIL - CALCULATE
+Use ISO 26262-3:2018 Table 4:
+- Input: S (from HAZOP), E (from Exposure), C (just assessed)
+- Output: QM, A, B, C, or D
+- Verify calculation is correct
 
-For example:
-- "Highway lane change at night in heavy rain" → Harder to control (likely C2 or C3) due to visibility, wet road, high speed
-- "Parking in normal conditions" → Easier to control (likely C0 or C1) due to low speed, stationary surroundings
+### Column 10: Safety Goal - FORMULATE
+**CRITICAL FORMAT RULES:**
+- ✅ Start with: Avoid, Prevent, Ensure, Maintain, Mitigate, Limit
+- ❌ DO NOT write: "The [system] shall..." or "System shall..."
+- Result-oriented at vehicle level
+- Keep concise (one sentence)
+- Do NOT include ASIL, Safe State, or FTTI here
 
-**Generate the complete HARA table with all 12 columns now:**
+**Examples:**
+- ✅ "Avoid battery overcharge to prevent thermal runaway during charging"
+- ✅ "Prevent unintended airbag deployment during normal driving"
+- ✅ "Ensure driver visibility through windscreen in all weather"
+- ❌ "The BMS shall prevent overcharge..." (WRONG)
+
+### Column 11: Safe State - DEFINE
+Specific system condition ensuring safety:
+- Measurable and verifiable
+- Examples: "Battery isolated from HV bus", "Airbag armed but not deployed", "Vehicle immobilized with parking brake"
+
+### Column 12: FTTI - SPECIFY
+Fault-Tolerant Time Interval:
+- Format: "50ms", "100ms", "500ms", "1s", "N/A"
+- Guidelines:
+  * ASIL D + high-speed: 50-200ms
+  * ASIL D + low-speed: 100-500ms
+  * ASIL C: 100-500ms
+  * ASIL B: 500ms-2s or N/A
+  * ASIL A/QM: Usually N/A
+
+---
+
+## COMPLETE EXAMPLE (ALL 12 COLUMNS):
+
+| HAZ-001 | Monitor battery cell voltage | No voltage monitoring | Battery overcharge leading to thermal runaway and fire | Fast charging in extreme heat | S3 | E2 | C3 | ASIL D | Avoid battery overcharge to prevent thermal runaway during charging operations | Battery isolated from charger, thermal management active | 100ms |
+
+---
+
+## GENERATION INSTRUCTIONS:
+
+1. **Start with header row** (copy the 12-column format above)
+2. **For each hazard** in HAZOP table:
+   - Extract columns 1-5 from HAZOP and Exposure tables
+   - **COPY Severity (S)** from HAZOP (do not recalculate)
+   - **COPY Exposure (E)** from Exposure Assessment
+   - **ASSESS Controllability (C)** based on operational situation
+   - **CALCULATE ASIL** using S, E, C
+   - **FORMULATE Safety Goal** (start with action verb)
+   - **DEFINE Safe State** (specific condition)
+   - **SPECIFY FTTI** (based on ASIL and dynamics)
+
+3. **Verify each row has exactly 12 columns**
+
+4. **Do NOT omit Severity (S)** - this is critical for ASIL calculation
+
+**Generate the complete 12-column HARA table now:**
 """
     
     try:
@@ -1293,21 +1453,19 @@ For example:
 {chr(10).join([f'- {asil}: {count} hazard(s)' for asil, count in sorted(asil_counts.items())])}
 
 **Completed:**
-- Step 1: Functions extracted
-- Step 2: HAZOP analysis performed
-- Step 3: Exposure assessed with driving scenarios
-- Step 4: HARA table generated (S, E, C, ASIL determined)
+- ✅ Step 1: Functions extracted
+- ✅ Step 2: HAZOP analysis performed
+- ✅ Step 3: Exposure assessed with driving scenarios
+- ✅ Step 4: HARA table generated (S, E, C, ASIL determined)
 
 **ISO 26262-3:2018 Compliance:**
-- Clause 6.4.2: Situation analysis (driving scenarios selected)
-- Clause 6.4.3: Hazard identification (HAZOP method)
-- Clause 6.4.4: Classification of hazardous events (S, E, C assessed)
-- Clause 6.4.5: ASIL determination (calculated per Table 4)
-- Clause 6.4.6: Safety goals (preliminary formulation)
+- ✅ Clause 6.4.2: Situation analysis (driving scenarios selected)
+- ✅ Clause 6.4.3: Hazard identification (HAZOP method)
+- ✅ Clause 6.4.4: Classification of hazardous events (S, E, C assessed)
+- ✅ Clause 6.4.5: ASIL determination (calculated per Table 4)
+- ✅ Clause 6.4.6: Safety goals (preliminary formulation)
 
-**Next Steps:**
-
-Step 5: `derive detailed safety goals`
+➡️ Step 5: `derive detailed safety goals`
 - Creates detailed safety goals for ASIL A/B/C/D hazards
 - Defines safe states
 - Specifies FTTI with justification
@@ -1321,7 +1479,7 @@ Step 5: `derive detailed safety goals`
 - Exposure assessment table
 - Complete HARA table
 
-**One Step Remaining:** Derive detailed safety goals to complete ISO 26262-3 Clause 6.
+**One optional Step Remaining:** Derive detailed safety goals to complete ISO 26262-3 Clause 6.
 """
         
         return result

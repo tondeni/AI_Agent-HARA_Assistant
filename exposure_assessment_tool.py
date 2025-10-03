@@ -19,11 +19,74 @@ def load_operational_situations(plugin_folder):
         log.error(f"Error loading operational situations: {e}")
         return None
 
+# Refine the assess_exposure_for_all_hazards prompt in exposure_assessment_tool.py
+
+def get_exposure_guidance():
+    """Return detailed exposure guidance based on ISO 26262-3 Annex B.3"""
+    return """
+**ISO 26262-3:2018 Exposure Classification (Table 2 + Annex B.3-B.5):**
+
+**E0: Incredible**
+- Less than 0.001% of operating time
+- Examples: Force majeure (earthquake, plane landing on highway), incredibly unlikely co-occurrences
+- If E0 assigned, no ASIL required - provide rationale for exclusion
+
+**E1: Very low probability**
+- 0.001% to 0.1% of operating time
+- Duration: Not specified precisely, but very rare
+- Frequency: Less than once per year for most drivers
+- Examples:
+  * Mountain pass with engine off (downhill coasting)
+  * Vehicle during jump start
+  * Driving in reverse (for passenger cars)
+  * Stopped requiring engine restart at railway crossing
+
+**E2: Low probability**
+- 0.1% to 1% of operating time  
+- Duration: <1% of average operating time
+- Frequency: Few times per year for most drivers
+- Examples:
+  * Snow and ice on road (regional variation)
+  * Country road intersection
+  * Highway exit ramp
+  * Vehicle being refueled
+  * Evasive maneuver deviating from desired path
+
+**E3: Medium probability**
+- 1% to 10% of operating time
+- Duration: 1% to 10% of average operating time
+- Frequency: Once per month or more for average driver
+- Examples:
+  * Wet road
+  * One-way street (city)
+  * Heavy traffic (stop and go)
+  * Overtaking
+  * Parking operations
+  * Accelerating, decelerating
+
+**E4: High probability**  
+- Greater than 10% of operating time
+- Duration: >10% of average operating time
+- Frequency: Almost every drive
+- Examples:
+  * Highway cruising
+  * Country road driving
+  * City traffic
+  * Lane changes (highway)
+  * Normal driving conditions
+
+**Assessment Method:**
+- Choose DURATION-based OR FREQUENCY-based depending on hazard nature
+- Duration-based: For hazards present throughout a driving condition (e.g., driving on ice)
+- Frequency-based: For hazards triggered by events (e.g., gear shifting, starting engine)
+- When combining multiple scenarios: Use MINIMUM exposure (intersection logic)
+  Example: Highway (E4) + Heavy Rain (E2) = E2 combined
+"""
 
 @tool(return_direct=True)
 def assess_exposure_for_all_hazards(tool_input, cat):
     """
-    Step 3: Select relevant driving scenarios and assess Exposure for ALL hazards from HAZOP analysis.
+    Assess Exposure for all hazards.
     
     This tool processes each hazard from the HAZOP table and:
     1. Selects 2-4 relevant basic operational situations
@@ -102,7 +165,8 @@ For EACH hazard in the HAZOP table, perform exposure assessment by:
 1. Analyzing the hazard context (malfunction + hazardous event)
 2. Selecting 2-4 relevant basic operational situations from the database
 3. Combining them into a specific driving scenario
-4. Calculating combined Exposure using MIN rule
+4 * IMPORTANT*: E1 is the minimum value, E4 is the maximum ones 
+4. *CRITICAL ** Calculating combined Exposure using MIN rule. (eg. if driving scenario has (E4, E3), the exposure is E3 (the minimum one))
 5. Providing rationale for the selection and exposure level
 
 **CRITICAL OUTPUT FORMAT:**
@@ -187,8 +251,24 @@ Output the raw table directly.
 - Clause 6.4.2: Situation analysis completed
 - Clause 6.4.4: Exposure classification performed
 
-**Next Step:**
-`generate hara table` - This will add Controllability assessment and calculate ASIL for each hazard
+## Workflow Progress: 3/5 Steps Complete
+
+**Completed:**
+- ✅ Step 1: Functions extracted
+- ✅ Step 2: HAZOP analysis performed (Severity assessed)
+- ✅ Step 3: Exposure for all hazard assessed
+
+**Next Steps:**
+
+➡️ Step 4: `Generate HARA table`
+- Combines hazard data (Function, Malfunction, Hazardous Event, S) from HAZOP.
+- Integrates Operational Situations and Exposure (E) assessments.
+- Assesses Controllability (C) for each hazard within its scenario context.
+- Calculates final ASIL using S, E, and C.
+- Outputs complete HARA table including Safety Goals.
+
+**Remaining Steps:**
+5. ❓Derive detailed safety goals
 
 **Verification Checklist:**
 - [ ] All hazards have specific driving scenarios (not generic)
