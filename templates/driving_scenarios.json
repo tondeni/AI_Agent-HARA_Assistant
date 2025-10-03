@@ -1,0 +1,135 @@
+{
+  "basic_dynamic_situations": {
+    "visibility": [
+      "poor_visibility_<50m_fog_blinding",
+      "dark_no_residual_light_road_limits_unrecognizable",
+      "dark_few_residual_light_road_limits_recognizable"
+    ],
+    "passengers": [
+      "1_passenger",
+      "2_passengers",
+      "more_than_2_passengers"
+    ],
+    "road_conditions": [
+      "normal_friction_coefficient_0.8-1.2",
+      "reduced_friction_coefficient_<0.8_humidity_rain_damaged_asphalt",
+      "low_friction_coefficient_<0.5_snow_ice",
+      "variable_friction_coefficient_delta_<0.3_dry_wet_ice_transitions",
+      "high_variable_friction_coefficient_delta_>0.3_dry_ice_transitions",
+      "considerable_wheel_stress_bumps_holes_curb"
+    ],
+    "dynamic_conditions": [
+      "speed_<150_kmh",
+      "speed_150-210_kmh",
+      "speed_210-300_kmh",
+      "speed_>300_kmh",
+      "start_low_speed_0-12_kmh",
+      "normal_longitudinal_acceleration_<3_ms2",
+      "longitudinal_acceleration_3-4_ms2",
+      "longitudinal_acceleration_>4_ms2",
+      "normal_deceleration_<4_ms2",
+      "deceleration_>4_ms2",
+      "emergency_brake_deceleration_>6_ms2",
+      "performing_lane_change",
+      "reverse_maneuver",
+      "overtaking"
+    ],
+    "driver_actions": [
+      "executes_gear_shifting",
+      "direction_indicator_on",
+      "releases_seat_belt",
+      "attaches_seat_belt"
+    ],
+    "traffic_conditions": [
+      "vehicle_parked_inside_or_outside_building",
+      "longitudinal_parking",
+      "transversal_parking",
+      "standstill_on_slope_2-8_percent_inclination",
+      "parked_on_inclined_plane_>8_percent_driver_absent",
+      "standstill_in_queue_stop_signal_traffic_light_pedestrian_crossing",
+      "standstill_first_in_queue_no_vehicle_ahead",
+      "crossing_intersection_with_or_without_traffic_controls",
+      "turning_at_intersection",
+      "no_traffic",
+      "medium_traffic_with_safety_distance",
+      "high_traffic_without_safety_distance",
+      "path_with_parked_car_at_roadside"
+    ],
+    "load_tyres_towing": [
+      "driving_with_trailer",
+      "driving_with_load",
+      "payload_<=100kg_without_passengers",
+      "payload_>100kg_without_passengers",
+      "driving_with_emergency_wheel",
+      "driving_with_snow_chains",
+      "vehicle_towed_by_other_vehicle"
+    ],
+    "road_type": [
+      "highway",
+      "highway_entrance_ramp",
+      "highway_exit_ramp",
+      "country_road",
+      "city",
+      "mountain_pass",
+      "traffic_restricted_area_pedestrian_zone",
+      "speed_30_zone",
+      "construction_site_with_physical_barriers",
+      "construction_site_without_physical_barriers",
+      "tunnel",
+      "rail_crossing"
+    ]
+  },
+  "basic_static_situations": {
+    "driver_passengers": [
+      "vehicle_parked_driver_present_key_off",
+      "vehicle_parked_driver_absent",
+      "vehicle_parked_driver_absent_passengers_inside"
+    ],
+    "key_on_doors_locked": [
+      "standstill_engine_on_vehicle_not_ready_to_move",
+      "standstill_vehicle_ready_to_move",
+      "long_term_parking_>2_days"
+    ],
+    "onboarding_offboarding_loading": [
+      "driver_gets_on_off_vehicle",
+      "parking_brake_release",
+      "performing_key_on",
+      "loading_unloading_boot_person_behind_vehicle",
+      "vehicle_refueling",
+      "vehicle_recharging_via_cable"
+    ],
+    "service_activities": [
+      "driver_checks_adds_engine_liquids",
+      "vehicle_stationary_on_lifting_platform"
+    ],
+    "breakdowns_accidents": [
+      "vehicle_failure_stationary",
+      "vehicle_accident",
+      "vehicle_started_by_external_source"
+    ],
+    "stationary_vehicle": [
+      "parked_in_multi_level_car_park",
+      "garage",
+      "parked_in_street",
+      "parked_on_roadside_or_emergency_lane_highway"
+    ]
+  },
+  "other_basic_situations": {
+    "people_vulnerables": [
+      "people_in_danger_zone_1m_front_or_rear_parked_vehicle",
+      "person_extends_body_part_out_window_or_roof",
+      "people_on_vehicle_roof_or_hood"
+    ],
+    "car_wash": [
+      "vehicle_at_car_wash"
+    ],
+    "vehicle_transport": [
+      "vehicle_being_transported_truck_train_ship_plane",
+      "open_close_windows_or_sunroof",
+      "opening_closing_vehicle"
+    ],
+    "car_body": [
+      "driving_with_open_hood_cabrio_only"
+    ]
+  }
+}

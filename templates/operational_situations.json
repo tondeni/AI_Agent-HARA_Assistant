@@ -1,0 +1,416 @@
+{
+  "metadata": {
+    "standard": "ISO 26262-3:2018",
+    "clause": "6.4.2 - Situation analysis and classification",
+    "version": "1.0",
+    "description": "Basic operational situations with ISO 26262 exposure classifications based on statistical data and real-world usage patterns"
+  },
+  "exposure_criteria": {
+    "E0": "Incredibly unlikely (< 0.001% of operating time)",
+    "E1": "Very low probability (0.001% to 0.1%)",
+    "E2": "Low probability (0.1% to 1%)",
+    "E3": "Medium probability (1% to 10%)",
+    "E4": "High probability (> 10% of operating time)"
+  },
+  "basic_scenarios": {
+    "urban_driving": [
+      {
+        "id": "URB-001",
+        "name": "City Traffic - Stop and Go",
+        "description": "Frequent acceleration and braking in dense urban traffic with speeds below 50 km/h",
+        "exposure": "E4",
+        "exposure_percentage": "25-35%",
+        "rationale": "Very common in daily commuting, represents significant portion of driving time in urban areas",
+        "typical_duration": "15-45 minutes per trip",
+        "frequency": "Daily for most urban drivers"
+      },
+      {
+        "id": "URB-002",
+        "name": "Urban Parking Operations",
+        "description": "Low-speed maneuvering for parking (parallel, perpendicular, reverse parking)",
+        "exposure": "E3",
+        "exposure_percentage": "3-7%",
+        "rationale": "Occurs multiple times daily but short duration per event",
+        "typical_duration": "2-5 minutes per parking event",
+        "frequency": "2-6 times per day"
+      },
+      {
+        "id": "URB-003",
+        "name": "Pedestrian Crossings",
+        "description": "Driving through areas with high pedestrian activity, crosswalks, school zones",
+        "exposure": "E4",
+        "exposure_percentage": "10-15%",
+        "rationale": "Very frequent in urban environments, multiple encounters per trip",
+        "typical_duration": "Intermittent throughout urban driving",
+        "frequency": "Multiple times per urban trip"
+      },
+      {
+        "id": "URB-004",
+        "name": "Traffic Light Intersections",
+        "description": "Stopping, waiting, and accelerating at signalized intersections",
+        "exposure": "E4",
+        "exposure_percentage": "15-20%",
+        "rationale": "Extremely common in urban driving, multiple per trip",
+        "typical_duration": "1-3 minutes per intersection",
+        "frequency": "10-30 times per urban trip"
+      },
+      {
+        "id": "URB-005",
+        "name": "Residential Street Driving",
+        "description": "Low-speed driving on residential streets with potential obstacles (children, pets)",
+        "exposure": "E3",
+        "exposure_percentage": "5-10%",
+        "rationale": "Common for residents, moderate duration",
+        "typical_duration": "5-15 minutes per trip",
+        "frequency": "Daily for many drivers"
+      }
+    ],
+    "highway_driving": [
+      {
+        "id": "HWY-001",
+        "name": "Highway Cruising",
+        "description": "Steady-state driving on highways/motorways at 80-130 km/h",
+        "exposure": "E4",
+        "exposure_percentage": "15-25%",
+        "rationale": "Common for commuters and long-distance travel",
+        "typical_duration": "20-120 minutes per trip",
+        "frequency": "Several times per week for many drivers"
+      },
+      {
+        "id": "HWY-002",
+        "name": "Highway Lane Changes",
+        "description": "Overtaking and lane changing maneuvers at highway speeds",
+        "exposure": "E4",
+        "exposure_percentage": "8-12%",
+        "rationale": "Frequent occurrence during highway driving",
+        "typical_duration": "5-15 seconds per maneuver",
+        "frequency": "10-50 times per hour on highway"
+      },
+      {
+        "id": "HWY-003",
+        "name": "Highway Entry/Merge",
+        "description": "Merging onto highway from on-ramp with acceleration",
+        "exposure": "E3",
+        "exposure_percentage": "1-2%",
+        "rationale": "Occurs at start of highway segments, brief duration",
+        "typical_duration": "15-30 seconds per merge",
+        "frequency": "1-4 times per highway trip"
+      },
+      {
+        "id": "HWY-004",
+        "name": "Highway Exit/Deceleration",
+        "description": "Exiting highway via off-ramp with deceleration",
+        "exposure": "E3",
+        "exposure_percentage": "1-2%",
+        "rationale": "Occurs at end of highway segments, brief duration",
+        "typical_duration": "20-40 seconds per exit",
+        "frequency": "1-4 times per highway trip"
+      },
+      {
+        "id": "HWY-005",
+        "name": "Highway Heavy Traffic",
+        "description": "Reduced speed highway driving (40-80 km/h) due to congestion",
+        "exposure": "E3",
+        "exposure_percentage": "5-8%",
+        "rationale": "Common in metropolitan areas during peak hours",
+        "typical_duration": "10-60 minutes per occurrence",
+        "frequency": "Daily during rush hours in urban areas"
+      }
+    ],
+    "environmental_conditions": [
+      {
+        "id": "ENV-001",
+        "name": "Light Rain",
+        "description": "Driving in light to moderate rainfall with wet road surfaces",
+        "exposure": "E3",
+        "exposure_percentage": "3-8%",
+        "rationale": "Varies significantly by region; moderate frequency in temperate climates",
+        "typical_duration": "15-60 minutes per event",
+        "frequency": "10-30 days per year (regional variation)"
+      },
+      {
+        "id": "ENV-002",
+        "name": "Heavy Rain",
+        "description": "Driving in heavy rainfall with reduced visibility and hydroplaning risk",
+        "exposure": "E2",
+        "exposure_percentage": "0.5-2%",
+        "rationale": "Less frequent but occurs in most regions seasonally",
+        "typical_duration": "10-30 minutes per event",
+        "frequency": "5-15 days per year"
+      },
+      {
+        "id": "ENV-003",
+        "name": "Light Snow/Slush",
+        "description": "Driving on snow-covered or slushy roads with reduced traction",
+        "exposure": "E2",
+        "exposure_percentage": "0.5-3%",
+        "rationale": "Regional variation; common in northern climates, rare in southern",
+        "typical_duration": "30-120 minutes per event",
+        "frequency": "10-40 days per year in snow regions"
+      },
+      {
+        "id": "ENV-004",
+        "name": "Ice/Black Ice",
+        "description": "Driving on icy roads with severely reduced traction",
+        "exposure": "E1",
+        "exposure_percentage": "0.1-0.5%",
+        "rationale": "Less frequent, mainly early morning in winter in specific regions",
+        "typical_duration": "20-60 minutes per event",
+        "frequency": "3-15 days per year in affected regions"
+      },
+      {
+        "id": "ENV-005",
+        "name": "Fog/Low Visibility",
+        "description": "Driving in fog with visibility below 100 meters",
+        "exposure": "E2",
+        "exposure_percentage": "0.5-1.5%",
+        "rationale": "Regional and seasonal, moderate frequency in affected areas",
+        "typical_duration": "15-60 minutes per event",
+        "frequency": "10-30 days per year (regional)"
+      },
+      {
+        "id": "ENV-006",
+        "name": "Night Driving",
+        "description": "Driving during darkness with artificial lighting only",
+        "exposure": "E3",
+        "exposure_percentage": "8-15%",
+        "rationale": "Significant portion of driving, especially in winter months",
+        "typical_duration": "20-90 minutes per trip",
+        "frequency": "Daily for many commuters"
+      },
+      {
+        "id": "ENV-007",
+        "name": "Extreme Heat",
+        "description": "Driving in ambient temperatures above 35°C affecting vehicle systems",
+        "exposure": "E2",
+        "exposure_percentage": "0.3-2%",
+        "rationale": "Seasonal and regional; common in hot climates",
+        "typical_duration": "Hours to full day",
+        "frequency": "20-60 days per year in hot regions"
+      },
+      {
+        "id": "ENV-008",
+        "name": "Extreme Cold",
+        "description": "Driving in ambient temperatures below -20°C affecting vehicle systems",
+        "exposure": "E1",
+        "exposure_percentage": "0.1-1%",
+        "rationale": "Regional; mainly northern climates in winter",
+        "typical_duration": "Hours to full day",
+        "frequency": "10-40 days per year in cold regions"
+      }
+    ],
+    "special_operations": [
+      {
+        "id": "SPC-001",
+        "name": "Vehicle Startup - Cold",
+        "description": "Vehicle initialization and startup after prolonged inactivity (cold start)",
+        "exposure": "E4",
+        "exposure_percentage": "0.5-1%",
+        "rationale": "Occurs at least once per trip, very brief duration",
+        "typical_duration": "10-60 seconds",
+        "frequency": "1-3 times per day"
+      },
+      {
+        "id": "SPC-002",
+        "name": "Vehicle Startup - Hot",
+        "description": "Vehicle restart shortly after previous operation (hot start)",
+        "exposure": "E3",
+        "exposure_percentage": "0.2-0.5%",
+        "rationale": "Common for multiple errands, brief duration",
+        "typical_duration": "5-15 seconds",
+        "frequency": "0-5 times per day"
+      },
+      {
+        "id": "SPC-003",
+        "name": "EV Fast Charging",
+        "description": "High-power DC fast charging (50-350 kW)",
+        "exposure": "E2",
+        "exposure_percentage": "0.2-0.8%",
+        "rationale": "Weekly for long-distance EV drivers, occasional for others",
+        "typical_duration": "15-45 minutes per session",
+        "frequency": "1-4 times per week for frequent users"
+      },
+      {
+        "id": "SPC-004",
+        "name": "EV Slow/Home Charging",
+        "description": "Low-power AC charging at home or workplace (3-22 kW)",
+        "exposure": "E4",
+        "exposure_percentage": "15-25%",
+        "rationale": "Daily activity for most EV owners, long duration",
+        "typical_duration": "2-8 hours per session",
+        "frequency": "Daily for EV owners"
+      },
+      {
+        "id": "SPC-005",
+        "name": "Towing/Heavy Load",
+        "description": "Vehicle operation while towing trailer or carrying heavy load",
+        "exposure": "E1",
+        "exposure_percentage": "0.05-0.3%",
+        "rationale": "Infrequent for most drivers, occasional for specific use cases",
+        "typical_duration": "30-180 minutes per trip",
+        "frequency": "0-10 times per year for most drivers"
+      },
+      {
+        "id": "SPC-006",
+        "name": "Off-Road Driving",
+        "description": "Driving on unpaved roads, trails, or rough terrain",
+        "exposure": "E1",
+        "exposure_percentage": "0.03-0.5%",
+        "rationale": "Infrequent for most vehicles, more common for SUVs in rural areas",
+        "typical_duration": "20-120 minutes per trip",
+        "frequency": "0-20 times per year for most drivers"
+      },
+      {
+        "id": "SPC-007",
+        "name": "Long-Term Parking",
+        "description": "Vehicle parked and inactive for extended period (> 1 week)",
+        "exposure": "E2",
+        "exposure_percentage": "0.5-2%",
+        "rationale": "Occasional for most drivers (vacations, business trips)",
+        "typical_duration": "1-4 weeks per event",
+        "frequency": "1-4 times per year"
+      },
+      {
+        "id": "SPC-008",
+        "name": "Vehicle Diagnostics/Service Mode",
+        "description": "Special operating mode during maintenance or diagnostics",
+        "exposure": "E1",
+        "exposure_percentage": "0.01-0.05%",
+        "rationale": "Very infrequent, only during scheduled service",
+        "typical_duration": "30-120 minutes per service",
+        "frequency": "1-2 times per year"
+      }
+    ],
+    "critical_maneuvers": [
+      {
+        "id": "CRT-001",
+        "name": "Emergency Braking",
+        "description": "Full braking force applied to avoid collision",
+        "exposure": "E1",
+        "exposure_percentage": "0.01-0.1%",
+        "rationale": "Rare but critical event, brief duration",
+        "typical_duration": "2-5 seconds per event",
+        "frequency": "0-5 times per year for most drivers"
+      },
+      {
+        "id": "CRT-002",
+        "name": "Evasive Steering",
+        "description": "Sudden steering input to avoid obstacle or collision",
+        "exposure": "E1",
+        "exposure_percentage": "0.01-0.1%",
+        "rationale": "Rare but critical event, very brief duration",
+        "typical_duration": "1-3 seconds per event",
+        "frequency": "0-3 times per year for most drivers"
+      },
+      {
+        "id": "CRT-003",
+        "name": "Loss of Traction Event",
+        "description": "Wheel slip, skid, or loss of vehicle control",
+        "exposure": "E1",
+        "exposure_percentage": "0.05-0.3%",
+        "rationale": "Rare in modern vehicles with stability control, weather dependent",
+        "typical_duration": "2-10 seconds per event",
+        "frequency": "0-5 times per year in adverse conditions"
+      },
+      {
+        "id": "CRT-004",
+        "name": "Collision Event",
+        "description": "Vehicle impact with another vehicle, object, or barrier",
+        "exposure": "E0",
+        "exposure_percentage": "< 0.001%",
+        "rationale": "Statistically rare for individual drivers",
+        "typical_duration": "< 1 second impact",
+        "frequency": "0-1 times per driver lifetime"
+      }
+    ],
+    "vehicle_states": [
+      {
+        "id": "STA-001",
+        "name": "Normal Operation - Optimal",
+        "description": "All systems functioning normally, optimal conditions",
+        "exposure": "E4",
+        "exposure_percentage": "70-85%",
+        "rationale": "Majority of driving time under normal conditions",
+        "typical_duration": "Most of driving time",
+        "frequency": "Continuous during normal operation"
+      },
+      {
+        "id": "STA-002",
+        "name": "Degraded Mode Operation",
+        "description": "Vehicle operating with reduced functionality due to detected fault",
+        "exposure": "E1",
+        "exposure_percentage": "0.05-0.2%",
+        "rationale": "Rare occurrence, depends on fault frequency",
+        "typical_duration": "Until repair (hours to days)",
+        "frequency": "0-2 times per year"
+      },
+      {
+        "id": "STA-003",
+        "name": "Low State of Charge (< 20%)",
+        "description": "EV or hybrid operating with low battery charge",
+        "exposure": "E2",
+        "exposure_percentage": "0.5-2%",
+        "rationale": "Occasional for most EV drivers, depends on charging habits",
+        "typical_duration": "15-60 minutes until charging",
+        "frequency": "1-10 times per month for some EV drivers"
+      },
+      {
+        "id": "STA-004",
+        "name": "Battery Thermal Stress",
+        "description": "Battery operating near thermal limits (hot or cold)",
+        "exposure": "E2",
+        "exposure_percentage": "0.3-1.5%",
+        "rationale": "Seasonal and regional variation",
+        "typical_duration": "10-90 minutes per event",
+        "frequency": "10-40 days per year in extreme climates"
+      },
+      {
+        "id": "STA-005",
+        "name": "System Initialization",
+        "description": "Systems booting up and performing self-checks",
+        "exposure": "E4",
+        "exposure_percentage": "0.3-0.8%",
+        "rationale": "Every vehicle start, very brief",
+        "typical_duration": "5-30 seconds",
+        "frequency": "1-5 times per day"
+      }
+    ]
+  },
+  "scenario_combination_rules": {
+    "description": "Rules for combining basic scenarios to create realistic operational situations for HARA",
+    "exposure_calculation": "When combining scenarios, use the MINIMUM exposure level from constituent scenarios",
+    "rationale": "Combined scenarios represent the intersection of conditions, which is inherently less frequent than individual conditions",
+    "examples": [
+      {
+        "combination": "URB-001 + ENV-001",
+        "name": "City Traffic in Light Rain",
+        "combined_exposure": "E3",
+        "explanation": "Urban traffic (E4) + Light rain (E3) = E3 (takes minimum)"
+      },
+      {
+        "combination": "HWY-001 + ENV-006",
+        "name": "Highway Driving at Night",
+        "combined_exposure": "E3",
+        "explanation": "Highway cruising (E4) + Night driving (E3) = E3"
+      },
+      {
+        "combination": "HWY-002 + ENV-002",
+        "name": "Highway Lane Change in Heavy Rain",
+        "combined_exposure": "E2",
+        "explanation": "Lane changes (E4) + Heavy rain (E2) = E2"
+      },
+      {
+        "combination": "URB-002 + ENV-004",
+        "name": "Parking on Icy Surface",
+        "combined_exposure": "E1",
+        "explanation": "Parking (E3) + Ice (E1) = E1"
+      }
+    ],
+    "combination_constraints": [
+      "Maximum 3 basic scenarios per combination for clarity",
+      "Scenarios must be logically compatible (e.g., cannot combine parking with highway cruising)",
+      "Priority: Select scenarios most relevant to the hazardous event being analyzed",
+      "Consider both likelihood and severity impact when selecting combinations"
+    ]
+  }
+}

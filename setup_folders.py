@@ -14,7 +14,6 @@ def setup_plugin_folders():
     folders = [
         "item_definitions",  # For storing Item Definition files
         "templates",         # For HAZOP guide words and other templates
-        "generated_hara"     # For storing generated HARA documents
     ]
     
     for folder_name in folders:
