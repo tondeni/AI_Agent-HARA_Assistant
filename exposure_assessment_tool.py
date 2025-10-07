@@ -1,13 +1,16 @@
-# exposure_assessment_tool.py
+# exposure_assessment_tool.py - Refined
 # Tool for batch assessment of exposure for all HAZOP hazards
 
 import json
 import os
-import re
-from datetime import datetime
 from cat.mad_hatter.decorators import tool
 from cat.log import log
+import re
 
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
 def load_operational_situations(plugin_folder):
     """Load operational situations database from JSON file."""
@@ -15,75 +18,150 @@ def load_operational_situations(plugin_folder):
     try:
         with open(template_path, 'r', encoding='utf-8') as f:
             return json.load(f)
+    except FileNotFoundError:
+        log.error(f"Operational situations file not found: {template_path}")
+        return None
+    except json.JSONDecodeError as e:
+        log.error(f"Invalid operational situations JSON: {e}")
+        return None
     except Exception as e:
         log.error(f"Error loading operational situations: {e}")
         return None
 
-# Refine the assess_exposure_for_all_hazards prompt in exposure_assessment_tool.py
 
 def get_exposure_guidance():
-    """Return detailed exposure guidance based on ISO 26262-3 Annex B.3"""
-    return """
-**ISO 26262-3:2018 Exposure Classification (Table 2 + Annex B.3-B.5):**
+    """Return detailed ISO 26262-3 exposure guidance."""
+    return """# ISO 26262-3:2018 Exposure Classification
 
-**E0: Incredible**
-- Less than 0.001% of operating time
-- Examples: Force majeure (earthquake, plane landing on highway), incredibly unlikely co-occurrences
-- If E0 assigned, no ASIL required - provide rationale for exclusion
+## Table 2: Probability of Exposure Classes
 
-**E1: Very low probability**
-- 0.001% to 0.1% of operating time
-- Duration: Not specified precisely, but very rare
-- Frequency: Less than once per year for most drivers
-- Examples:
-  * Mountain pass with engine off (downhill coasting)
-  * Vehicle during jump start
-  * Driving in reverse (for passenger cars)
-  * Stopped requiring engine restart at railway crossing
+**E4: High probability** - >10% operating time
+- Examples: Highway cruising, city traffic, lane changes
+- Almost every drive
 
-**E2: Low probability**
-- 0.1% to 1% of operating time  
-- Duration: <1% of average operating time
-- Frequency: Few times per year for most drivers
-- Examples:
-  * Snow and ice on road (regional variation)
-  * Country road intersection
-  * Highway exit ramp
-  * Vehicle being refueled
-  * Evasive maneuver deviating from desired path
+**E3: Medium probability** - 1-10% operating time
+- Examples: Wet road, heavy traffic, overtaking, parking
+- Once per month or more
 
-**E3: Medium probability**
-- 1% to 10% of operating time
-- Duration: 1% to 10% of average operating time
-- Frequency: Once per month or more for average driver
-- Examples:
-  * Wet road
-  * One-way street (city)
-  * Heavy traffic (stop and go)
-  * Overtaking
-  * Parking operations
-  * Accelerating, decelerating
+**E2: Low probability** - 0.1-1% operating time
+- Examples: Snow/ice, highway exit, refueling, evasive maneuver
+- Few times per year
 
-**E4: High probability**  
-- Greater than 10% of operating time
-- Duration: >10% of average operating time
-- Frequency: Almost every drive
-- Examples:
-  * Highway cruising
-  * Country road driving
-  * City traffic
-  * Lane changes (highway)
-  * Normal driving conditions
+**E1: Very low probability** - 0.001-0.1% operating time
+- Examples: Mountain pass with engine off, driving in reverse
+- Less than once per year
 
-**Assessment Method:**
-- Choose DURATION-based OR FREQUENCY-based depending on hazard nature
-- Duration-based: For hazards present throughout a driving condition (e.g., driving on ice)
-- Frequency-based: For hazards triggered by events (e.g., gear shifting, starting engine)
-- When combining multiple scenarios: Use MINIMUM exposure (intersection logic)
-  Example: Highway (E4) + Heavy Rain (E2) = E2 combined
+**E0: Incredible** - <0.001% operating time
+- Examples: Force majeure (earthquake, plane landing on highway)
+- Requires exclusion rationale
+
+## Assessment Method
+
+**Duration-based:** For hazards present throughout a driving condition
+- Example: Driving on ice = E2
+
+**Frequency-based:** For hazards triggered by events
+- Example: Gear shifting, starting engine
+
+## Combination Rule (Critical)
+
+When combining scenarios: **Use MINIMUM exposure**
+- Combined events occur LESS frequently than individual events
+- Example: Highway (E4) + Rain (E2) = E2
+- Rationale: Highway in rain less frequent than either alone
 """
 
-@tool(return_direct=True)
+
+def build_exposure_assessment_prompt(hazop_analysis, situations_data, item_name):
+    """Build structured prompt for exposure assessment."""
+    
+    # Truncate HAZOP if too long
+    hazop_truncated = hazop_analysis[:8000]
+    if len(hazop_analysis) > 8000:
+        hazop_truncated += "\n\n[... HAZOP table truncated ...]"
+    
+    # Truncate situations database
+    situations_json = json.dumps(situations_data.get("basic_scenarios", {}), indent=2)
+    situations_truncated = situations_json[:8000]
+    if len(situations_json) > 8000:
+        situations_truncated += "\n\n[... database truncated ...]"
+    
+    prompt = f"""You are a Functional Safety Engineer performing Exposure assessment per ISO 26262-3:2018 Clause 6.4.4.
+
+**System:** {item_name}
+
+# HAZOP Analysis Results
+
+{hazop_truncated}
+
+# Available Operational Situations Database
+
+{situations_truncated}
+
+# ISO 26262 Guidance
+
+{get_exposure_guidance()}
+
+# Your Task
+
+For EACH hazard in the HAZOP table, perform exposure assessment:
+
+1. **Analyze hazard context** (malfunction + hazardous event)
+2. **Select 2-4 relevant scenarios** from database
+3. **Combine into specific scenario** with descriptive name
+4. **Calculate exposure** using MIN rule: E_combined = MIN(E1, E2, ...)
+5. **Provide clear rationale** for selection and calculation
+
+# Critical Rules
+
+- **MIN Rule**: Combined exposure = MINIMUM of selected scenarios
+- **Scenario Selection**: Must be directly relevant to when/where hazard occurs
+- **Compatibility**: Selected scenarios must be logically compatible
+- **Relevance**: Consider malfunction and hazardous event context
+
+# Output Format
+
+Generate ONLY a raw markdown table. NO code blocks, NO fences.
+
+## Table Columns
+
+| Hazard ID | Malfunction | Hazardous Event | Selected Scenarios | Combined Scenario | Exposure | Rationale |
+
+## Column Specifications
+
+- **Hazard ID**: Copy from HAZOP (HAZ-001, etc.)
+- **Malfunction**: Brief description (max 10 words)
+- **Hazardous Event**: From HAZOP (max 10 words)
+- **Selected Scenarios**: List IDs with exposures
+  Format: "URB-001 (E4), ENV-002 (E2), ENV-006 (E3)"
+- **Combined Scenario**: Descriptive name
+  Example: "Urban traffic in heavy rain at night"
+- **Exposure**: E0-E4 (MINIMUM of selected scenarios)
+- **Rationale**: Brief explanation (1-2 sentences)
+  Must include MIN calculation and frequency justification
+
+# Example Format
+
+| HAZ-001 | No voltage monitoring | Battery overcharge thermal runaway | SPC-003 (E2), ENV-007 (E2) | Fast charging in extreme heat | E2 | MIN(E2, E2) = E2. Fast charging weekly, extreme heat seasonal, combination less frequent |
+
+**Generate the exposure assessment table now:**
+"""
+    
+    return prompt
+
+
+# ============================================================================
+# TOOL
+# ============================================================================
+
+@tool(
+    return_direct=True,
+    examples=[
+        "assess exposure for all hazards",
+        "evaluate exposure",
+        "perform step 3"
+    ]
+)
 def assess_exposure_for_all_hazards(tool_input, cat):
     """
     Assess Exposure for all hazards.
@@ -284,3 +362,150 @@ Output the raw table directly.
         import traceback
         log.error(traceback.format_exc())
         return f"Error in exposure assessment: {str(e)}"
+
+
+# @tool(
+#     return_direct=True,
+#     examples=[
+#         "assess exposure for all hazards",
+#         "evaluate exposure",
+#         "perform step 3"
+#     ]
+# )
+# def assess_all_exposure(tool_input, cat):
+#     """Assess Exposure for all HAZOP hazards.
+    
+#     This tool processes each hazard from the HAZOP table and:
+#     1. Selects 2-4 relevant basic operational situations
+#     2. Combines them into a realistic driving scenario
+#     3. Calculates combined Exposure using MIN rule
+#     4. Outputs a table with Hazard ID, Driving Scenario, and Exposure Class
+    
+#     Input: None (uses HAZOP analysis from working memory)
+#     Returns exposure table with scenarios and combined E levels."""
+    
+#     log.info("🔧 TOOL CALLED: assess_all_exposure")
+    
+#     # Check prerequisites
+#     hazop_analysis = cat.working_memory.get("hazop_analysis", "")
+    
+#     if not hazop_analysis:
+#         return """❌ **No HAZOP Analysis Found**
+
+# **Complete steps in order:**
+
+# **Please complete Step 2 first:**
+# `apply hazop analysis`
+
+# **Then run this tool:**
+# `assess exposure for all hazards` ← You are here
+# """
+    
+#     item_name = cat.working_memory.get("hara_item_name", "Unknown Item")
+    
+#     # Load operational situations
+#     plugin_folder = os.path.dirname(__file__)
+#     situations_data = load_operational_situations(plugin_folder)
+    
+#     if not situations_data:
+#         log.error("Operational situations database unavailable")
+#         return """❌ **Operational Situations Database Missing**
+
+# Cannot perform automated exposure assessment.
+
+# **Check:**
+# - File exists: `templates/operational_situations.json`
+# - Plugin correctly installed
+# - File permissions correct
+
+# **Alternative:**
+# Manual assessment: `assess hazard: [description]`"""
+    
+#     log.info(f"📊 Assessing exposure for all hazards: {item_name}")
+    
+#     # Parse HAZOP to count hazards
+#     hazop_lines = [line.strip() for line in hazop_analysis.split('\n') 
+#                    if line.strip().startswith('| HAZ-')]
+    
+#     if not hazop_lines:
+#         return """❌ **No Hazards Found in HAZOP**
+
+# Please verify HAZOP table format and regenerate if needed."""
+    
+#     log.info(f"Found {len(hazop_lines)} hazards to assess")
+    
+#     # Build assessment prompt
+#     try:
+#         prompt = build_exposure_assessment_prompt(
+#             hazop_analysis, 
+#             situations_data, 
+#             item_name
+#         )
+        
+#         log.info("🤖 Generating exposure assessments...")
+#         exposure_result = cat.llm(prompt).strip()
+        
+#         # Store results
+#         cat.working_memory["exposure_assessments"] = exposure_result
+#         cat.working_memory["hara_stage"] = "exposure_assessed"
+        
+#         log.info(f"✅ Exposure assessment complete")
+        
+#         return f"""✅ **Exposure Assessment Complete: {item_name}**
+
+# {exposure_result}
+
+# ---
+# ## Workflow Progress: 3/5 Steps Complete
+
+# **Completed:**
+# - ✅ Step 1: Functions extracted
+# - ✅ Step 2: HAZOP analysis performed (Severity assessed)
+# - ✅ Step 3: Exposure for all hazard assessed
+
+# **ISO 26262-3:2018 Compliance:**
+# - ✅ Clause 6.4.2: Situation analysis completed
+# - ✅ Clause 6.4.4: Exposure classification performed
+
+# **Next Steps:**
+
+# ➡️ Step 4: `Generate HARA table`
+# - Combines hazard data (Function, Malfunction, Hazardous Event, S) from HAZOP.
+# - Integrates Operational Situations and Exposure (E) assessments.
+# - Assesses Controllability (C) for each hazard within its scenario context.
+# - Calculates final ASIL using S, E, and C.
+# - Outputs complete HARA table including Safety Goals.
+
+# **Remaining Steps:**
+# 5. ❓Derive detailed safety goals
+
+# **Verification Checklist:**
+# - [ ] All hazards have specific driving scenarios (not generic)
+# - [ ] Exposure calculations follow MIN rule
+# - [ ] Selected scenarios are logically compatible
+# - [ ] Scenarios are relevant to each specific hazard
+# """
+    
+#     except Exception as e:
+#         log.error(f"Exposure assessment failed: {e}")
+#         return f"""❌ **Exposure Assessment Failed**
+
+# Error: {e}
+
+# **Possible causes:**
+# - HAZOP table too large for LLM context
+# - Invalid database format
+# - LLM service unavailable
+
+# **Recommendations:**
+# 1. Reduce number of hazards in HAZOP
+# 2. Check operational situations database validity
+# 3. Try again in a few moments"""
+
+
+# ============================================================================
+# BACKWARD COMPATIBILITY
+# ============================================================================
+
+# Maintain old name as alias
+# assess_exposure_for_all_hazards = assess_all_exposure
