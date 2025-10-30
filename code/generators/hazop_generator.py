@@ -193,15 +193,19 @@ class HAZOPGenerator:
             for word, desc in self.guide_words.items()
         ])
         
+        # Build context section separately to avoid f-string backslash error
+        # Python f-strings cannot have backslashes in expression parts
+        context_section = ""
+        if context:
+            context_section = f"**Context from Item Definition:**\n{context}\n\n"
+        
         prompt = f"""You are a Functional Safety Engineer performing HAZOP analysis per ISO 26262-3:2018, Clause 6.4.3.
 
 **System:** {system_name}
 **Function ID:** {function_id}
 **Function:** {function}
 
-{f"**Context from Item Definition:**\n{context}\n" if context else ""}
-
-**Task:** Apply each HAZOP guide word to identify potential malfunctioning behaviors and hazardous events.
+{context_section}**Task:** Apply each HAZOP guide word to identify potential malfunctioning behaviors and hazardous events.
 
 **HAZOP Guide Words:**
 {guide_words_str}

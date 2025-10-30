@@ -11,6 +11,10 @@ Combines Exposure (E), Severity (S), and Controllability (C)
 
 from typing import List, Dict, Tuple
 from cat.log import log
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 
 class ASILCalculator:

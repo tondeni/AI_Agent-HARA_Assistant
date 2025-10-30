@@ -8,16 +8,17 @@ from cat.log import log
 import sys
 import os
 
-# Setup paths
-current_file = os.path.abspath(__file__)
-tools_folder = os.path.dirname(current_file)
-code_folder = os.path.dirname(tools_folder)
-plugin_folder = os.path.dirname(code_folder)
+# This code navigates up from the current file to find the right folders
+current_file = os.path.abspath(__file__)          # code/tools/asil_determination_tool.py
+tools_folder = os.path.dirname(current_file)       # code/tools/
+code_folder = os.path.dirname(tools_folder)        # code/
+plugin_folder = os.path.dirname(code_folder)       # AI_Agent-HARA_Assistant/
 
-if code_folder not in sys.path:
-    sys.path.insert(0, code_folder)
+# Then adds them to sys.path so Python can find them
+sys.path.insert(0, code_folder)
+sys.path.insert(0, os.path.join(code_folder, 'generators'))
 
-from generators.HARA.esc_generator import ESCGenerator
+from ..generators.esc_generator import ESCGenerator
 
 
 @tool(
@@ -203,7 +204,7 @@ def show_hara_table(tool_input, cat):
 **Action:** Complete E/S/C assessment first: `assess esc for all hazards`"""
     
     # Get statistics
-    from generators.HARA.esc_generator import ESCGenerator
+    from generators.esc_generator import ESCGenerator
     generator = ESCGenerator(None, None)
     stats = generator.calculate_esc_statistics(hazards)
     
