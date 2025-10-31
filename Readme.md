@@ -1,3 +1,38 @@
+┌─────────────────────────────────────────────────────────┐
+│ Step 1: Extract Functions                              │
+│ Command: extract functions from [System Name]          │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ Step 2: Apply HAZOP Analysis                           │
+│ Command: apply hazop analysis                          │
+│ Output: Complete HAZOP table with all guide words      │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ Step 2.5: View HAZOP Summary (NEW!)                   │
+│ Command: show hazop summary                            │
+│ Output: Prioritized list of top 20 critical hazards    │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ Step 3: Assess Exposure for All Hazards (ENHANCED!)   │
+│ Command: assess exposure for all hazards               │
+│ Output: Complete exposure table with scenarios         │
+│         Uses database + LLM for intelligent selection   │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ Step 4: Generate HARA Table                            │
+│ Command: generate hara table                           │
+└─────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
 # ISO 26262 HARA Assistant Plugin
 
 A Cheshire Cat AI plugin that assists in developing Hazard Analysis and Risk Assessment (HARA) for automotive systems using HAZOP (Hazard and Operability) methodology per ISO 26262-3:2018 Clause 6.
