@@ -1,188 +1,256 @@
-# ==============================================================================
-# code/loaders/item_definition_loader.py
-# Load Item Definition from multiple sources
-# ==============================================================================
+"""
+Item Definition Loader
+======================
+Manages loading and caching of ISO 26262 item definitions.
 
-import os
-from cat.log import log
-from typing import Optional
+Location: Plugin/Code/loader/item_definition_loader.py
+"""
+
+"""
+Item Definition Loader
+======================
+Manages loading and caching of ISO 26262 item definitions.
+"""
+
+from pathlib import Path
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+from datetime import datetime
+
+# ✅ CORRECT - Import from parent directory using relative import
+from ..utils import get_item_definitions_path
+
+
+@dataclass
+class ItemDefinition:
+    """Represents an ISO 26262 Item Definition document"""
+    system_name: str
+    file_path: Path
+    file_type: str
+    last_modified: datetime
+    functions: List[Dict] = None
+    is_loaded: bool = False
+    
+    def __repr__(self):
+        return f"ItemDefinition(system='{self.system_name}', file='{self.file_path.name}')"
 
 
 class ItemDefinitionLoader:
     """
-    Load Item Definition for HARA analysis from multiple sources.
+    Manages loading and caching of item definitions.
     
-    Search priority:
-    1. Working memory (most recent - after ItemDefinition_Developer)
-    2. HARA plugin item_definitions/ folder
-    3. ItemDefinition_Developer plugin folders
-    4. OutputFormatter plugin generated_documents/
+    Features:
+    - Discovers available item definitions
+    - Caches loaded documents
+    - Tracks modifications
+    - Provides search capabilities
     """
     
-    def __init__(self, plugin_folder: str):
+    def __init__(self, cat):
         """
-        Initialize loader with plugin folder path.
+        Initialize the loader.
         
         Args:
-            plugin_folder: Path to HARA_Assistant plugin root
+            cat: StrayCat instance
         """
-        self.plugin_folder = plugin_folder
-        self.item_definitions_folder = os.path.join(plugin_folder, "item_definitions")
-        
-        # External plugin paths
-        self.output_formatter_path = os.path.join(
-            plugin_folder, "..", "AI_Agent-OutputFormatter", 
-            "generated_documents", "01_Item_Definition"
-        )
+        self.cat = cat
+        self.cache: Dict[str, ItemDefinition] = {}
+        self.item_definitions_path = None
+        self._load_available_definitions()
     
-    def load_item_definition(self, item_name: str, cat) -> Optional[str]:
-        """
-        Find and load Item Definition content.
+    def _load_available_definitions(self):
+        """Discover all available item definitions in the folder."""
+        self.cat.log.info("🔍 Discovering available item definitions...")
         
-        Args:
-            item_name: Name of the item/system
-            cat: Cheshire Cat instance (for working memory access)
+        self.item_definitions_path = get_item_definitions_path(self.cat)
+        
+        if not self.item_definitions_path:
+            self.cat.log.error("❌ Could not locate item_definitions folder")
+            return
+        
+        supported_extensions = ['.docx', '.pdf', '.txt', '.doc']
+        
+        for ext in supported_extensions:
+            for file_path in self.item_definitions_path.glob(f"*{ext}"):
+                if file_path.is_file():
+                    # Extract system name from filename
+                    system_name = self._extract_system_name(file_path.name)
+                    
+                    # Get file metadata
+                    last_modified = datetime.fromtimestamp(file_path.stat().st_mtime)
+                    
+                    # Create ItemDefinition object
+                    item_def = ItemDefinition(
+                        system_name=system_name,
+                        file_path=file_path,
+                        file_type=ext,
+                        last_modified=last_modified
+                    )
+                    
+                    # Add to cache (use file path as key for uniqueness)
+                    cache_key = str(file_path)
+                    self.cache[cache_key] = item_def
+                    
+                    self.cat.log.info(f"  ✅ Discovered: {item_def}")
+        
+        self.cat.log.info(f"📚 Total item definitions found: {len(self.cache)}")
+    
+    def _extract_system_name(self, filename: str) -> str:
+        """
+        Extract system name from filename.
+        
+        Handles formats like:
+        - "Item Definition_wiper.pdf" → "wiper"
+        - "BMS_Item_Definition.docx" → "BMS"
+        - "ADAS_System.pdf" → "ADAS"
+        """
+        import re
+        
+        # Remove extension
+        name_no_ext = Path(filename).stem
+        
+        # Handle "Item Definition_system" format
+        if "item definition" in name_no_ext.lower() or "item_definition" in name_no_ext.lower():
+            parts = re.split(r'item[_\s-]+definition[_\s-]+', name_no_ext, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                return parts[1].strip('_- ').title()
+        
+        # Handle "system_Item_Definition" format
+        if "item" in name_no_ext.lower() and "definition" in name_no_ext.lower():
+            parts = re.split(r'[_\s-]+item[_\s-]+definition', name_no_ext, flags=re.IGNORECASE)
+            if len(parts) > 0:
+                return parts[0].strip('_- ').title()
+        
+        # Default: use filename without extension
+        return name_no_ext.replace('_', ' ').replace('-', ' ').title()
+    
+    def get_all_systems(self) -> List[str]:
+        """
+        Get list of all available system names.
         
         Returns:
-            Item Definition content as string, or None if not found
+            List of system names
         """
-        
-        # SOURCE 1: Working Memory (highest priority)
-        content = self._load_from_working_memory(cat, item_name)
-        if content:
-            log.info("✅ Loaded Item Definition from working memory")
-            return content
-        
-        # SOURCE 2: HARA plugin item_definitions/ folder
-        content = self._load_from_folder(self.item_definitions_folder, item_name)
-        if content:
-            log.info(f"✅ Loaded Item Definition from {self.item_definitions_folder}")
-            return content
-        
-        # SOURCE 3: OutputFormatter generated documents
-        content = self._load_from_folder(self.output_formatter_path, item_name)
-        if content:
-            log.info(f"✅ Loaded Item Definition from OutputFormatter")
-            return content
-        
-        log.warning(f"❌ No Item Definition found for '{item_name}'")
-        return None
+        systems = set()
+        for item_def in self.cache.values():
+            systems.add(item_def.system_name)
+        return sorted(list(systems))
     
-    def _load_from_working_memory(self, cat, item_name: str) -> Optional[str]:
+    def find_by_system_name(self, system_name: str, fuzzy: bool = True) -> List[ItemDefinition]:
         """
-        Load from cat.working_memory (after ItemDefinition_Developer).
+        Find item definitions matching a system name.
         
-        Keys checked:
-        - item_definition_content
-        - item_def_content
+        Args:
+            system_name: The system name to search for
+            fuzzy: Whether to use fuzzy matching (default: True)
+            
+        Returns:
+            List of matching ItemDefinition objects
         """
+        from difflib import SequenceMatcher
         
-        # Check standard key
-        if "item_definition_content" in cat.working_memory:
-            content = cat.working_memory["item_definition_content"]
-            if item_name.lower() in content.lower():
-                return content
+        matches = []
+        system_normalized = system_name.lower().strip()
         
-        # Check alternative key
-        if "item_def_content" in cat.working_memory:
-            content = cat.working_memory["item_def_content"]
-            if item_name.lower() in content.lower():
-                return content
+        for item_def in self.cache.values():
+            item_normalized = item_def.system_name.lower()
+            
+            # Exact match
+            if system_normalized == item_normalized:
+                matches.append(item_def)
+                continue
+            
+            # Substring match
+            if system_normalized in item_normalized or item_normalized in system_normalized:
+                matches.append(item_def)
+                continue
+            
+            # Fuzzy match (if enabled)
+            if fuzzy:
+                similarity = SequenceMatcher(None, system_normalized, item_normalized).ratio()
+                if similarity >= 0.6:  # 60% similarity threshold
+                    matches.append(item_def)
         
-        return None
+        return matches
     
-    def _load_from_folder(self, folder_path: str, item_name: str) -> Optional[str]:
+    def get_by_file_path(self, file_path: Path) -> Optional[ItemDefinition]:
         """
-        Search folder for Item Definition file.
+        Get item definition by file path.
         
-        Supports:
-        - .txt
-        - .md
-        - .docx (if available)
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            ItemDefinition if found, None otherwise
         """
-        
-        if not os.path.exists(folder_path):
-            return None
-        
-        log.info(f"🔍 Searching: {folder_path}")
-        
-        try:
-            for filename in os.listdir(folder_path):
-                # Check text files
-                if filename.lower().endswith(('.txt', '.md')):
-                    if item_name.lower().replace(' ', '_') in filename.lower():
-                        file_path = os.path.join(folder_path, filename)
-                        return self._read_text_file(file_path)
-                
-                # Check DOCX files
-                elif filename.lower().endswith('.docx'):
-                    if item_name.lower().replace(' ', '_') in filename.lower():
-                        file_path = os.path.join(folder_path, filename)
-                        return self._read_docx_file(file_path)
-        
-        except Exception as e:
-            log.error(f"Error searching folder {folder_path}: {e}")
-        
-        return None
+        cache_key = str(file_path)
+        return self.cache.get(cache_key)
     
-    def _read_text_file(self, file_path: str) -> Optional[str]:
-        """Read plain text or markdown file."""
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            log.info(f"✅ Read text file: {os.path.basename(file_path)}")
-            return content
-        except Exception as e:
-            log.error(f"Error reading text file {file_path}: {e}")
-            return None
+    def reload_cache(self):
+        """Reload the cache by rediscovering all item definitions."""
+        self.cat.log.info("🔄 Reloading item definitions cache...")
+        self.cache.clear()
+        self._load_available_definitions()
     
-    def _read_docx_file(self, file_path: str) -> Optional[str]:
-        """Read Word document if python-docx available."""
-        try:
-            import docx
-            doc = docx.Document(file_path)
-            content = '\n'.join([para.text for para in doc.paragraphs])
-            log.info(f"✅ Read DOCX file: {os.path.basename(file_path)}")
-            return content
-        except ImportError:
-            log.warning("python-docx not installed - cannot read .docx files")
-            return None
-        except Exception as e:
-            log.error(f"Error reading DOCX file {file_path}: {e}")
-            return None
+    def get_summary(self) -> Dict:
+        """
+        Get a summary of loaded item definitions.
+        
+        Returns:
+            Dictionary with summary information
+        """
+        file_types = {}
+        for item_def in self.cache.values():
+            file_types[item_def.file_type] = file_types.get(item_def.file_type, 0) + 1
+        
+        return {
+            'total_definitions': len(self.cache),
+            'unique_systems': len(set(item.system_name for item in self.cache.values())),
+            'file_types': file_types,
+            'systems': self.get_all_systems()
+        }
 
 
-# ==============================================================================
-# HELPER FUNCTIONS
-# ==============================================================================
+# ============================================================================
+# HELPER FUNCTIONS FOR HOOKS
+# ============================================================================
 
-def validate_item_definition(content: str, required_sections: list = None) -> tuple[bool, list]:
+def preload_item_definitions(cat):
     """
-    Validate Item Definition content.
+    Preload all item definitions at plugin startup.
+    Can be called from plugin hooks.
     
     Args:
-        content: Item Definition text
-        required_sections: Optional list of required section names
-    
+        cat: StrayCat instance
+        
     Returns:
-        (is_valid, missing_sections)
+        ItemDefinitionLoader instance
     """
+    loader = ItemDefinitionLoader(cat)
+    summary = loader.get_summary()
     
-    if required_sections is None:
-        required_sections = [
-            'purpose',
-            'functions',
-            'interfaces',
-            'operating environment'
-        ]
+    cat.log.info(f"📚 Item definitions loaded:")
+    cat.log.info(f"  • Total: {summary['total_definitions']}")
+    cat.log.info(f"  • Unique systems: {summary['unique_systems']}")
+    cat.log.info(f"  • Systems: {', '.join(summary['systems'])}")
     
-    missing = []
-    content_lower = content.lower()
+    return loader
+
+
+def get_loader_instance(cat):
+    """
+    Get or create ItemDefinitionLoader instance.
     
-    for section in required_sections:
-        if section.lower() not in content_lower:
-            missing.append(section)
+    This can be cached in working memory to avoid recreating.
     
-    is_valid = len(missing) == 0
+    Args:
+        cat: StrayCat instance
+        
+    Returns:
+        ItemDefinitionLoader instance
+    """
+    # Check if loader exists in working memory
+    if not hasattr(cat.working_memory, 'item_definition_loader'):
+        cat.working_memory['item_definition_loader'] = ItemDefinitionLoader(cat)
     
-    return is_valid, missing
+    return cat.working_memory['item_definition_loader']

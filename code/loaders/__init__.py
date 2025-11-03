@@ -12,9 +12,8 @@ Handles loading data from various sources:
 - Configuration files
 """
 
-from .item_definition_loader import ItemDefinitionLoader, validate_item_definition
+from .item_definition_loader import ItemDefinitionLoader
 
 __all__ = [
     'ItemDefinitionLoader',
-    'validate_item_definition'
 ]

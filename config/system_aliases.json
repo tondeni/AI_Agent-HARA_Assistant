@@ -1,0 +1,60 @@
+{
+  "_comment": "Automotive system name aliases for fuzzy matching",
+  "_description": "Maps common abbreviations and variations to full system names",
+  
+  "bms": "Battery Management System",
+  "ems": "Engine Management System",
+  "tms": "Thermal Management System",
+  "pms": "Power Management System",
+  
+  "abs": "Anti-lock Braking System",
+  "esc": "Electronic Stability Control",
+  "esp": "Electronic Stability Program",
+  "tcs": "Traction Control System",
+  "ebd": "Electronic Brake-force Distribution",
+  "eba": "Emergency Brake Assist",
+  
+  "eps": "Electric Power Steering",
+  "pas": "Power Assisted Steering",
+  
+  "srs": "Supplemental Restraint System",
+  "airbag": "Airbag Control System",
+  
+  "acc": "Adaptive Cruise Control",
+  "lka": "Lane Keeping Assist",
+  "lkas": "Lane Keeping Assist System",
+  "ldw": "Lane Departure Warning",
+  "ldws": "Lane Departure Warning System",
+  "aeb": "Autonomous Emergency Braking",
+  "bsd": "Blind Spot Detection",
+  "fcw": "Forward Collision Warning",
+  "afs": "Adaptive Front-lighting System",
+  
+  "hvac": "Heating Ventilation Air Conditioning",
+  "bcm": "Body Control Module",
+  "peps": "Passive Entry Passive Start",
+  "rke": "Remote Keyless Entry",
+  
+  "wiper": "Windscreen Wiper and Washer System",
+  "washer": "Windscreen Wiper and Washer System",
+  "brake": "Braking System",
+  "braking": "Braking System",
+  "steering": "Steering Control System",
+  "battery": "Battery Management System",
+  
+  "dcdc": "DC-DC Converter",
+  "obc": "On-Board Charger",
+  "vcu": "Vehicle Control Unit",
+  "ecu": "Electronic Control Unit",
+  "tcu": "Transmission Control Unit",
+  "pdu": "Power Distribution Unit",
+  
+  "hmi": "Human Machine Interface",
+  "tft": "Thin Film Transistor Display",
+  "cluster": "Instrument Cluster",
+  
+  "can": "Controller Area Network",
+  "lin": "Local Interconnect Network",
+  "flexray": "FlexRay Communication",
+  "ethernet": "Automotive Ethernet"
+}
