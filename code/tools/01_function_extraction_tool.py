@@ -86,7 +86,6 @@ def fuzzy_match_system_name(input_name: str, filename: str, threshold: int = 60)
     
     return False
 
-
 def find_matching_files(system_name: str, item_definitions_path: Path, cat) -> List[Path]:
     """
     Find all files that match the system name in item_definitions folder.
@@ -169,7 +168,6 @@ def parse_docx_file(file_path: Path, cat) -> str:
         log.error(f"❌ {error_msg}")
         return error_msg
 
-
 def parse_pdf_file(file_path: Path, cat) -> str:
     """Extract text from PDF file."""
     try:
@@ -199,7 +197,6 @@ def parse_pdf_file(file_path: Path, cat) -> str:
         log.error(f"❌ {error_msg}")
         return error_msg
 
-
 def parse_txt_file(file_path: Path, cat) -> str:
     """Extract text from TXT file."""
     try:
@@ -224,7 +221,6 @@ def parse_txt_file(file_path: Path, cat) -> str:
         error_msg = f"ERROR reading TXT file: {str(e)}"
         log.error(f"❌ {error_msg}")
         return error_msg
-
 
 def parse_file(file_path: Path, cat) -> str:
     """
@@ -252,6 +248,68 @@ def parse_file(file_path: Path, cat) -> str:
 # ============================================================================
 # FUNCTION EXTRACTION
 # ============================================================================
+def extract_functions_as_llm(text: str, item_name: str, cat) -> List[Dict]:
+    """
+    Extract functions from item document using LLM
+    
+    Args:
+        text: Extracted text from document
+        system_name: Name of the system (for context)
+        cat: StrayCat instance
+        
+    Returns:
+        List of dictionaries with 'id' and 'description'
+    """
+       
+    # Use LLM to extract functions
+    prompt = f"""Extract all the functionality of the {item_name} as described in Item Definition document: {text}.
+    If some of extracted functionalities is similar in the description or patter behaviour, group them and considre them as a one.
+
+For each function provide:
+- ID
+- Function name
+- Description and Normal pattern behaviour
+
+Return each function as JSON array with the following format:
+            "id": F-001,
+            "name": "Cell Voltage Monitoring",
+            "description /Normal pattern behaviour": "Continuously monitors voltage of battery cells"
+"""
+    
+    # Get LLM response (you'll use your actual LLM call here)
+    functions_json = cat.llm(prompt)
+    # functions = parse_json(functions_json)
+    
+    # # Example output structure
+    # functions = [
+    #     {
+    #         "id": "F-001",
+    #         "name": "Cell Voltage Monitoring",
+    #         "description": "Continuously monitors voltage of battery cells",
+    #         "normal_parameters": {
+    #             "voltage_range": "2.8V to 4.2V",
+    #             "sampling_rate": "100ms"
+    #         }
+    #     },
+    #     {
+    #         "id": "F-002", 
+    #         "name": "Temperature Sensing",
+    #         "description": "Monitors battery pack temperature",
+    #         "normal_parameters": {
+    #             "temp_range": "-20°C to 60°C",
+    #             "sensor_count": "8 thermistors"
+    #         }
+    #     }
+    #     # ... more functions
+    # ]
+    
+    # ✅ CRITICAL: Store in working memory for OutputFormatter
+    cat.working_memory['item_functions'] = functions_json
+    cat.working_memory['hara_item_name'] = item_name
+    cat.working_memory['last_operation'] = 'function_extraction'
+    cat.working_memory['needs_formatting'] = True  # Signal to OutputFormatter
+    
+    return functions_json
 
 def extract_functions_from_text(text: str, system_name: str, cat) -> List[Dict]:
     """
@@ -368,7 +426,7 @@ def extract_functions(tool_input: str, cat):
     
     The tool uses fuzzy matching, so "Wiper", "wiper", "WIPER" all work the same.
     
-    Input should be the system name (e.g., "Wiper", "BMS", "ADAS").
+    Input should be the item name (e.g., "Wiper", "BMS", "ADAS").
     """
     
     log.info(f"=" * 60)
@@ -377,8 +435,8 @@ def extract_functions(tool_input: str, cat):
     log.info(f"=" * 60)
     
     # Clean and normalize input
-    system_name = tool_input.strip().strip('"').strip("'").strip()
-    log.info(f"✨ Cleaned system name: '{system_name}'")
+    item_name = tool_input.strip().strip('"').strip("'").strip()
+    log.info(f"✨ Cleaned system name: '{item_name}'")
     
     # Get item_definitions folder path
     item_definitions_path = get_item_definitions_path(cat)
@@ -408,14 +466,14 @@ YourPlugin/
 """
     
     # Find matching files
-    matching_files = find_matching_files(system_name, item_definitions_path, cat)
+    matching_files = find_matching_files(item_name, item_definitions_path, cat)
     
     if not matching_files:
         # Get list of available files for helpful error message
         all_files = list(item_definitions_path.glob("*"))
         available_files = [f.name for f in all_files if f.suffix in ['.docx', '.pdf', '.txt', '.doc']]
         
-        return f"""❌ **No item definition found for '{system_name}'**
+        return f"""❌ **No item definition found for '{item_name}'**
 
 📁 **Available files in item_definitions/:**
 {chr(10).join(['  • ' + f for f in available_files]) if available_files else '  (folder is empty)'}
@@ -445,31 +503,16 @@ YourPlugin/
             continue
         
         # Extract functions from text
-        functions = extract_functions_from_text(text, system_name, cat)
-        
-        if functions:
-            result_text = f"\n✅ **{file_path.name}**\n"
-            result_text += f"   Found **{len(functions)} functions**:\n\n"
-            
-            for func in functions:
-                result_text += f"   **{func['id']}**: {func['description']}\n"
-            
-            results.append(result_text)
-            total_functions += len(functions)
-        else:
-            results.append(f"\n⚠️ **{file_path.name}**\n   No functions found. Document may need manual review or different format.\n")
-    
-    # Build final response
-    if results:
-        header = f"# 📋 Functions Extracted from '{system_name}'\n\n"
-        header += f"📁 **Source:** `item_definitions/`\n"
-        header += f"📄 **Files processed:** {len(matching_files)}\n"
-        header += f"🎯 **Total functions found:** {total_functions}\n"
-        header += f"{'=' * 50}\n"
-        
-        return header + "".join(results)
-    else:
-        return f"⚠️ Files were found but no functions could be extracted. Please check the document format."
+        functions = extract_functions_from_text(text, item_name, cat)
+        # functions= extract_functions_as_llm(text, item_name, cat)
+
+        # ✅ CRITICAL: Store in working memory for OutputFormatter
+        cat.working_memory['item_functions'] = functions
+        cat.working_memory['hara_item_name'] = item_name
+        cat.working_memory['last_operation'] = 'function_extraction'
+        cat.working_memory['needs_formatting'] = True  # Signal to OutputFormatter
+
+    return functions
 
 
 # ============================================================================

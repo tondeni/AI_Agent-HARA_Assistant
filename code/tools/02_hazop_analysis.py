@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(plugin_folder, 'code', 'generators'))
 from iso26262_base import ISO26262Tool, WorkflowManager, calculate_statistics
 
 
+
 class HAZOPAnalysisTool(ISO26262Tool):
     """
     Tool for applying HAZOP analysis to extracted functions.
@@ -190,6 +191,14 @@ def apply_hazop_analysis(tool_input, cat):
     
     # Execute tool
     tool = HAZOPAnalysisTool(cat, plugin_folder)
+
+        # Store results
+    cat.working_memory['hazop_results'] = hazop_results
+    
+    # ⭐ ADD THESE 2 LINES ⭐
+    trigger_hara_formatting(cat, 'hazop_analysis')
+    return f"HAZOP analysis complete. {len(hazop_results)} hazards identified."
+
     return tool.execute(tool_input if tool_input else "all")
 
 
