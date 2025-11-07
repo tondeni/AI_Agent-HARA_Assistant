@@ -21,7 +21,6 @@ sys.path.insert(0, os.path.join(code_folder, 'core'))
 
 from iso26262_base import WorkflowManager
 
-
 @tool(
     return_direct=True,
     examples=[
