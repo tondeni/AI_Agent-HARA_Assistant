@@ -8,12 +8,13 @@ from cat.mad_hatter.decorators import tool
 from cat.log import log
 import sys
 import os
+import textwrap
 
-# Setup paths
+#Setup paths
 current_file = os.path.abspath(__file__)
 tools_folder = os.path.dirname(current_file)
-plugin_folder = os.path.dirname(tools_folder)
-code_folder = os.path.dirname(tools_folder)
+code_folder = os.path.dirname(tools_folder) # Renamed for clarity
+plugin_folder = os.path.dirname(code_folder) # Get the actual plugin root
 
 # Add modules to path
 sys.path.insert(0, os.path.join(code_folder, 'core'))
@@ -423,3 +424,62 @@ This will analyze the Item Definition and identify 4-5 safety-relevant functions
 - Defines FTTI (Fault Tolerant Time Interval)"""
     
     return output
+
+@tool(
+    return_direct=True,
+    examples=[
+        "show HARA workflow",
+        "help with HARA",
+        "what are the HARA development steps",
+        "how do I generate HARA"
+    ]
+)
+def show_HARA_workflow(tool_input, cat):
+    """
+    Display the HARA development workflow per ISO 26262-3:2018, Clause 6.
+    
+    Shows complete step-by-step process for developing a HARA.
+    
+    Input: Any request for workflow, help, or guidance
+    """
+    
+    log.info("📋 Displaying HARA workflow")
+    
+    # Use textwrap.dedent to remove leading whitespace from the string
+    workflow = textwrap.dedent("""
+    # 📋 Here the complete workflow to develop the HARA work product by following ISO 26262-3:2018 recomendation.
+    # By following these steps, it is ensured to cover all the ISO 26262-3:2018 HARA clauses.                               
+    ---
+
+    ## 🎯 Objectives (ISO 26262-3:2018, 6.1):
+    a) Identify hazards caused by malfunctioning item behavior.
+    b) Formulate safety goals (and their ASILs) related to preventing or mitigating these hazards.
+
+    ---
+
+    ## 🔄 Complete Development Steps
+
+    | Step | Name | Command | ISO Clause | Description |
+    | :--- | :--- | :--- | :--- | :--- |
+    | 1 | **Extract Functions** | `extract functions from [system_name]` | 6.4.2 | Identify and list all functions of the item. |
+    | 2 | **Apply HAZOP Analysis** | `apply hazop analysis` | 6.4.3 | Use HAZOP to identify potential malfunctions. |
+    | 3 | **Define Op. Situations** | `identify relevant driving situations` | 6.4.4 | Analyze and list operational situations. |
+    | 4 | **Assess E/S/C** | `perform hazard assessment` | 6.4.5 | Classify hazards by Exposure, Severity, & Controllability. |
+    | 5 | **Determine ASIL** | `determine asil for all hazards` | 6.4.6 | Determine the ASIL (A-D or QM) for each hazard. |
+    | 6 | **Derive Safety Goals** | `derive safety goals` | 6.4.7 | Define top-level Safety Goals to mitigate hazards. |
+
+    ---
+
+    ## 🚀 Quick Start Example
+
+    ```
+    1. extract functions from [system name]
+    2. apply hazop analysis
+    3. identify relevant driving situations
+    4. perform hazard assessment
+    5. determine asil for all hazards
+    6. derive safety goals
+    ```
+    """)
+
+    return workflow

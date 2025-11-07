@@ -76,43 +76,32 @@ class SafetyGoalGenerator:
         """
         self.llm = llm
     
-    def generate_from_hazards(self, hazards: List[Dict], 
-                             system_name: str = "System") -> List[SafetyGoal]:
+    def generate_from_hazards(self, hazards: List[Dict], system_name: str) -> List[SafetyGoal]:
         """
-        Generate safety goals from hazardous events.
+        Generate safety goals for a list of ASIL-rated hazards.
         
         Args:
-            hazards: List of hazardous events with ASIL ratings
-            system_name: Name of the system/item
+            hazards: List of ASIL-rated hazard dictionaries
+            system_name: Name of the system
             
         Returns:
             List of SafetyGoal objects
         """
-        
-        log.info(f"🎯 Generating safety goals for {len(hazards)} hazards")
-        
+        log.info(f"Generating safety goals for {len(hazards)} hazards...")
         safety_goals = []
         
-        # Filter for ASIL A-D hazards only (QM doesn't need safety goals)
-        asil_hazards = [h for h in hazards 
-                       if h.get('asil', 'QM') in ['A', 'B', 'C', 'D']]
-        
-        if not asil_hazards:
-            log.warning("⚠️ No ASIL-rated hazards found (only QM)")
-            return []
-        
-        log.info(f"📋 Processing {len(asil_hazards)} ASIL-rated hazards")
-        
-        for idx, hazard in enumerate(asil_hazards, 1):
-            log.info(f"   Generating safety goal {idx}/{len(asil_hazards)}")
+        for idx, hazard in enumerate(hazards, 1):
+            # Pass the full hazard dictionary
+            goal = self._generate_single_goal(
+                hazard=hazard,
+                system_name=system_name,
+                index=idx
+            )
+            safety_goals.append(goal)
             
-            safety_goal = self._generate_single_goal(hazard, system_name, idx)
-            safety_goals.append(safety_goal)
-        
-        log.info(f"✅ Generated {len(safety_goals)} safety goals")
-        
+        log.info(f"Successfully generated {len(safety_goals)} safety goals.")
         return safety_goals
-    
+
     def _generate_single_goal(self, hazard: Dict, system_name: str, 
                              index: int) -> SafetyGoal:
         """
@@ -129,8 +118,8 @@ class SafetyGoalGenerator:
         
         # Extract hazard information
         hazard_id = hazard.get('id', f'H-{index:03d}')
-        hazardous_event = hazard.get('event', hazard.get('hazardous_event', ''))
-        malfunction = hazard.get('malfunction', '')
+        hazardous_event = hazard.get('hazardous_event', '')
+        malfunction = hazard.get('malfunctioning_behavior', '') # Use the correct key
         asil = hazard.get('asil', 'QM')
         severity = hazard.get('severity', '')
         exposure = hazard.get('exposure', '')
@@ -139,14 +128,14 @@ class SafetyGoalGenerator:
         # Create prompt for LLM
         prompt = f"""You are a Functional Safety Engineer expert in ISO 26262-3:2018.
 
-Generate a Safety Goal from this hazardous event per ISO 26262-3:2018, Clause 6.4.6.
+Generate a Safety Goal, Safe State, and FTTI from this hazardous event per ISO 26262-3:2018, Clause 6.4.6.
 
-**System:** {system_name}
+**System (for context, do NOT name in goal):** {system_name}
 
 **Hazardous Event ({hazard_id}):**
 {hazardous_event}
 
-**Malfunctioning Behavior:**
+**Malfunctioning Behavior (System-level fault):**
 {malfunction}
 
 **Risk Assessment:**
@@ -155,30 +144,59 @@ Generate a Safety Goal from this hazardous event per ISO 26262-3:2018, Clause 6.
 - Exposure: {exposure}
 - Controllability: {controllability}
 
-**ISO 26262-3:2018, Clause 6.4.6 Requirements:**
-1. Safety goal shall be formulated at vehicle level
-2. Shall specify the condition to avoid or mitigate the hazard
-3. Shall be clear, measurable, and verifiable
-4. Shall use "shall" mandatory language
-5. Shall be a single, atomic requirement
+---
+### 1. Safety Goal Guidance (Vehicle Level)
+* **Formulate at VEHICLE LEVEL:** Describe a state of the *vehicle* to be avoided.
+* **BE CONCISE:** The goal must be a direct negation of the hazardous event, stated as an "Avoid" requirement.
+* **DO NOT** mention the system ({system_name}).
 
-**Generate:**
-Return ONLY a valid JSON object (no markdown, no code blocks):
+---
+### 2. Safe State Guidance (Correlate with ASIL)
+* The Safe State is the state the vehicle enters *after* a fault is detected to prevent the hazard.
+* **The ASIL dictates the required robustness of the safe state.**
+* **ASIL C / ASIL D (This Hazard is {asil}):** High risk. Safe state MUST be robust (e.g., 'Inhibit Function', 'Degraded Mode', 'Emergency Position'). **'Warn Driver' alone is NOT an acceptable safe state.**
+* **ASIL A / ASIL B (This Hazard is {asil}):** Lower risk. Safe state can be less disruptive (e.g., 'Warn Driver', 'Degraded Mode').
+* **Options:**
+    1.  **Warn Driver:** (Lowest intervention - OK for ASIL A/B)
+    2.  **Degraded Mode:** (Reduced performance - Good for ASIL A/B/C, e.g., "Limp-home mode")
+    3.  **Inhibit Function:** (Stops the faulty function - Good for ASIL B/C/D, e.g., "Disable adaptive cruise")
+    4.  **Emergency Position:** (Highest intervention - For ASIL D, e.g., "Shut down")
+
+---
+### 3. FTTI (Fault Tolerant Time Interval) Guidance (Correlate with ASIL)
+* FTTI is the time from fault detection to reaching the Safe State.
+* **The ASIL dictates the time budget. This hazard is {asil}.**
+* **ASIL D:** Very Short FTTI (e.g., 10-100ms). Reaction must be immediate.
+* **ASIL C:** Short FTTI (e.g., 100-500ms). Reaction must be very fast.
+* **ASIL B:** Medium FTTI (e.g., 500-2000ms). Driver has some time.
+* **ASIL A:** Long FTTI (e.g., 2000-5000ms). Driver has several seconds.
+* **Use the hazard's physics to refine the estimate:**
+    * A steering failure (ASIL D) needs a 10ms FTTI.
+    * A wiper failure (ASIL B) can have a 2000ms FTTI.
+
+---
+**Generate JSON Output:**
+Return ONLY a valid JSON object (no markdown, no code blocks).
 
 {{
-  "statement": "The [System] shall [action to prevent/mitigate hazard]",
-  "safe_state": "Define the safe state (e.g., System off, Hold last valid value)",
-  "ftti_ms": "Estimate fault tolerant time interval in milliseconds (10-1000ms based on ASIL {asil})",
-  "rationale": "Brief explanation of how this goal addresses the hazard"
+  "statement": "Avoid [concise hazardous state]",
+  "safe_state": "Define the Safe State based on the {asil} risk (e.g., 'Inhibit function and warn driver')",
+  "ftti_ms": "Estimate FTTI in milliseconds based on the {asil} risk (e.g., 250)",
+  "rationale": "Brief rationale for FTTI/Safe State. (e.g., 'ASIL C requires a fast FTTI and a robust safe state.')"
 }}
 
-**Example Format:**
-{{
-  "statement": "The Wiper System shall prevent unintended activation during all operating conditions",
-  "safe_state": "Wiper system shall remain in OFF state",
-  "ftti_ms": "100",
-  "rationale": "Prevents unexpected wiper movement that could distract driver"
-}}
+---
+**CRITICAL EXAMPLES:**
+
+**Example 1 (Wiper System)**
+* **Hazard:** Loss of visibility from wiper failure
+* **Malfunction:** Wipers fail to activate
+* **CORRECT (Concise):** "Avoid missing wiper activation."
+
+**Example 2 (Brake System)**
+* **Hazard:** Collision from unintended braking
+* **Malfunction:** Brakes apply without command
+* **CORRECT (Concise):** "Avoid unintended braking."
 
 Return ONLY valid JSON (no extra text):"""
         
@@ -192,6 +210,11 @@ Return ONLY valid JSON (no extra text):"""
             # Create SafetyGoal object
             sg_id = f"SG-{index:03d}"
             
+            # Get ftti_ms and ensure it's a string
+            ftti_value = goal_data.get('ftti_ms', 'TBD')
+            if isinstance(ftti_value, (int, float)):
+                ftti_value = str(ftti_value)
+            
             safety_goal = SafetyGoal(
                 sg_id=sg_id,
                 statement=goal_data.get('statement', f'TBD - Safety goal for {hazard_id}'),
@@ -199,7 +222,7 @@ Return ONLY valid JSON (no extra text):"""
                 hazard_id=hazard_id,
                 hazardous_event=hazardous_event,
                 safe_state=goal_data.get('safe_state', 'To be specified per ISO 26262-3:2018, 7.4.2.5'),
-                ftti_ms=goal_data.get('ftti_ms', 'To be determined per ISO 26262-3:2018, 7.4.2.4'),
+                ftti_ms=ftti_value, # Use the string-converted value
                 severity=severity,
                 exposure=exposure,
                 controllability=controllability,
@@ -217,7 +240,7 @@ Return ONLY valid JSON (no extra text):"""
             sg_id = f"SG-{index:03d}"
             return SafetyGoal(
                 sg_id=sg_id,
-                statement=f"The {system_name} shall prevent {hazardous_event}",
+                statement=f"Avoid {malfunction}", # Fallback to malfunction
                 asil=asil,
                 hazard_id=hazard_id,
                 hazardous_event=hazardous_event,
@@ -286,8 +309,8 @@ Return ONLY valid JSON (no extra text):"""
         issues = []
         
         # Check mandatory fields
-        if not goal.statement or goal.statement == 'TBD':
-            issues.append(f"{goal.sg_id}: Missing safety goal statement")
+        if not goal.statement or 'TBD' in goal.statement or 'prevent' not in goal.statement.lower():
+            issues.append(f"{goal.sg_id}: Missing or placeholder safety goal statement")
         
         if 'shall' not in goal.statement.lower():
             issues.append(f"{goal.sg_id}: Safety goal must use 'shall' (mandatory)")
@@ -307,42 +330,34 @@ Return ONLY valid JSON (no extra text):"""
         
         return is_valid, issues
     
-    def generate_goal_summary(self, goals: List[SafetyGoal]) -> str:
+    def calculate_goal_statistics(self, goals: List[SafetyGoal]) -> Dict:
         """
-        Generate a summary of safety goals.
+        Calculate statistics for the generated safety goals.
         
         Args:
-            goals: List of safety goals
+            goals: List of SafetyGoal objects
             
         Returns:
-            Formatted summary string
+            Dictionary with statistics
         """
         
         if not goals:
-            return "No safety goals generated."
+            return {
+                "total_goals": 0,
+                "asil_distribution": {'D': 0, 'C': 0, 'B': 0, 'A': 0}
+            }
+            
+        stats = {
+            'total_goals': len(goals),
+            'asil_distribution': {'D': 0, 'C': 0, 'B': 0, 'A': 0}
+        }
         
-        summary = f"**Safety Goals Summary ({len(goals)} goals)**\n\n"
-        
-        # ASIL distribution
-        asil_counts = {'D': 0, 'C': 0, 'B': 0, 'A': 0}
         for goal in goals:
             asil = goal.asil
-            asil_counts[asil] = asil_counts.get(asil, 0) + 1
+            if asil in stats['asil_distribution']:
+                stats['asil_distribution'][asil] += 1
         
-        summary += "**ASIL Distribution:**\n"
-        for asil in ['D', 'C', 'B', 'A']:
-            if asil_counts[asil] > 0:
-                summary += f"- ASIL {asil}: {asil_counts[asil]} goals\n"
-        
-        summary += "\n**Safety Goals:**\n\n"
-        
-        for goal in goals:
-            summary += f"**{goal.sg_id}** (ASIL {goal.asil})\n"
-            summary += f"{goal.statement}\n"
-            summary += f"*Safe State:* {goal.safe_state}\n"
-            summary += f"*FTTI:* {goal.ftti_ms} ms\n\n"
-        
-        return summary
+        return stats
 
 
 def test_generator():
@@ -352,18 +367,18 @@ def test_generator():
     class MockLLM:
         def __call__(self, prompt):
             return json.dumps({
-                "statement": "The Wiper System shall prevent unintended activation during all operating conditions",
-                "safe_state": "Wiper system shall remain in OFF state",
-                "ftti_ms": "100",
-                "rationale": "Prevents driver distraction from unexpected wiper movement"
+                "statement": "The vehicle shall prevent unintended activation of wipers during normal driving",
+                "safe_state": "Wiper system function is inhibited and driver is warned",
+                "ftti_ms": "1000",
+                "rationale": "Prevents driver distraction from unexpected wiper movement. 1000ms is sufficient."
             })
     
     # Test hazards
     test_hazards = [
         {
             'id': 'H-001',
-            'event': 'Unintended wiper activation causes driver distraction',
-            'malfunction': 'Wiper activates without driver input',
+            'hazardous_event': 'Unintended wiper activation causes driver distraction',
+            'malfunctioning_behavior': 'Wiper activates without driver input',
             'asil': 'B',
             'severity': 'S2',
             'exposure': 'E4',
@@ -372,9 +387,17 @@ def test_generator():
     ]
     
     generator = SafetyGoalGenerator(MockLLM())
+    # Test the new generate_from_hazards method
     goals = generator.generate_from_hazards(test_hazards, "Wiper System")
     
-    print(generator.generate_goal_summary(goals))
+    # Test the new calculate_goal_statistics method
+    stats = generator.calculate_goal_statistics(goals)
+    
+    print("--- Test Results ---")
+    print(f"Stats: {stats}")
+    print("\nGoals:")
+    for goal in goals:
+        print(json.dumps(goal.to_dict(), indent=2))
 
 
 if __name__ == "__main__":

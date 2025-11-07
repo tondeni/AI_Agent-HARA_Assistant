@@ -78,6 +78,82 @@ class ESCGenerator:
             log.error(f"Error loading rating tables: {e}")
             return {}
     
+    def _determine_asil(self, severity: str, exposure: str, controllability: str) -> str:
+        """
+        Determine ASIL from E, S, C ratings per ISO 26262-3:2018, Table 4.
+        """
+        
+        s = severity
+        e = exposure
+        c = controllability
+        
+        # S0, E0, or C0 always result in QM (Quality Management)
+        if s == 'S0' or e == 'E0' or c == 'C0':
+            return 'QM'
+        
+        # S1
+        if s == 'S1':
+            if e in ['E1', 'E2']:
+                if c in ['C1', 'C2', 'C3']:
+                    return 'QM'
+            elif e == 'E3':
+                if c in ['C1', 'C2']:
+                    return 'QM'
+                elif c == 'C3':
+                    return 'A'
+            elif e == 'E4':
+                if c == 'C1':
+                    return 'QM'
+                elif c == 'C2':
+                    return 'A'
+                elif c == 'C3':
+                    return 'B'
+        
+        # S2
+        elif s == 'S2':
+            if e in ['E1', 'E2']:
+                if c in ['C1', 'C2', 'C3']:
+                    return 'QM'
+            elif e == 'E3':
+                if c in ['C1', 'C2']:
+                    return 'A'
+                elif c == 'C3':
+                    return 'B'
+            elif e == 'E4':
+                if c == 'C1':
+                    return 'A'
+                elif c == 'C2':
+                    return 'B'
+                elif c == 'C3':
+                    return 'C'
+        
+        # S3
+        elif s == 'S3':
+            if e in ['E1', 'E2']:
+                if c == 'C1':
+                    return 'QM' # Note: ISO 26262:2018 recommends QM
+                elif c == 'C2':
+                    return 'A'
+                elif c == 'C3':
+                    return 'B'
+            elif e == 'E3':
+                if c == 'C1':
+                    return 'A'
+                elif c == 'C2':
+                    return 'B'
+                elif c == 'C3':
+                    return 'C'
+            elif e == 'E4':
+                if c == 'C1':
+                    return 'B'
+                elif c == 'C2':
+                    return 'C'
+                elif c == 'C3':
+                    return 'D'
+                    
+        # Fallback
+        return 'QM'
+    
     def assess_esc(
         self,
         hazop_results: List[Dict],
@@ -130,14 +206,18 @@ class ESCGenerator:
             response = self.llm(prompt).strip()
             
             # Parse response
-            hazards = self._parse_esc_response(response, hazop_batch)
+            # --- THIS IS THE FIX ---
+            # We must pass 'scenarios' to the parser so it can
+            # look up the Exposure (E) rating.
+            hazards = self._parse_esc_response(response, hazop_batch, scenarios)
             
             return hazards
             
         except Exception as e:
             log.error(f"Error assessing batch: {e}")
             # Return hazards with default ratings
-            return self._create_default_hazards(hazop_batch)
+            # We must also pass 'scenarios' to the fallback function
+            return self._create_default_hazards(hazop_batch, scenarios)
     
     def _build_esc_prompt(
         self,
@@ -149,7 +229,7 @@ class ESCGenerator:
         
         # Format scenarios
         scenarios_text = "\n".join([
-            f"- {s.get('name', 'N/A')} ({s.get('exposure_class', 'E?')}): {s.get('description', 'N/A')}"
+            f"- {s.get('name', 'N/A')} (Exposure: {s.get('exposure_class', 'E?')})"
             for s in scenarios
         ])
         
@@ -159,170 +239,168 @@ class ESCGenerator:
             hazards_text += f"\n{idx}. **{hazop.get('function_name', 'Unknown')}** / {hazop.get('guide_word', 'N/A')}\n"
             hazards_text += f"   Malfunction: {hazop.get('malfunctioning_behavior', 'N/A')}\n"
             hazards_text += f"   Hazard: {hazop.get('hazardous_event', 'N/A')}\n"
-            hazards_text += f"   Preliminary S: {hazop.get('severity', 'S?')}\n"
+            # This is now presented as a fixed, non-negotiable value
+            hazards_text += f"   Given Severity: {hazop.get('severity', 'S?')} (This rating is fixed from HAZOP)\n"
         
-        prompt = f"""You are a Functional Safety Engineer performing E/S/C assessment per ISO 26262-3:2018, Clause 6.4.4.
+        prompt = f"""You are an expert Functional Safety Engineer performing E/S/C assessment per ISO 26262-3:2018.
+Your goal is to be realistic and pragmatic.
 
 **System:** {system_name}
 
-**Operational Situations:**
+**Available Operational Situations (Source for Exposure):**
 {scenarios_text}
 
 **Hazards to Assess:**
 {hazards_text}
 
-**Task:** For each hazard, assess:
+**Task:** For each hazard, you must:
+1.  **Link to Situation:** Select the *one* most relevant 'Operational Situation' from the list above.
+2.  **Assess Controllability (C):** Critically assess the controllability of the hazard.
 
-1. **Exposure (E0-E4):** Which operational situation(s) apply? How frequent?
-   - E4: ≥10% of operating time
-   - E3: 1-10% of operating time
-   - E2: 0.1-1% of operating time
-   - E1: 0.001-0.1% of operating time
-   - E0: <0.001% of operating time
-
-2. **Severity (S0-S3):** Worst-case injuries to occupants or road users?
-   - S3: Life-threatening to fatal
-   - S2: Severe injuries (survival probable)
-   - S1: Light to moderate injuries
-   - S0: No injuries
-
-3. **Controllability (C0-C3):** Can average drivers avoid harm?
-   - C3: Difficult/uncontrollable (<90% of drivers)
-   - C2: Normally controllable (≥90% of drivers)
-   - C1: Simply controllable (≥99% of drivers)
-   - C0: Controllable in general (>99% of drivers)
-
-**Critical:** Provide detailed rationale for each rating.
-
-**Output Format:**
-
-For each hazard, provide:
+The **Severity (S)** is already determined by the HAZOP analysis and **must not be changed**.
+The **Exposure (E)** is determined by the situation you select.
+Your **only** assessment task is **Controllability (C)**.
 
 ---
-## Hazard {idx}: [Brief description]
+### 1. Severity (S) & Exposure (E)
+* **Severity (S):** ACCEPT the 'Given Severity' from the hazard. This is fixed.
+* **Exposure (E):** SELECT the *one* most relevant 'Operational Situation' from the list. The E-rating for the hazard will be the one from that situation.
 
-**Exposure:** E[0-4]
-**Rationale:** [Why this exposure? Which scenarios? How frequent?]
+### 2. Controllability (C0-C3) - YOUR MAIN TASK
+Can an *average driver* avoid harm *when the hazard occurs*? How much time do they have?
+* **Rule:** Assume a non-expert, "average" driver.
+* **Example (Wiper Failure):**
+    * **Hazard:** "Loss of wiper function in heavy rain."
+    * **Analysis:** The failure is obvious. The driver has many seconds (or minutes) to react. The standard response is to slow down, turn on hazard lights, and pull over.
+    * **Correct Controllability:** **C1 (Simply controllable)** or **C2 (Normally controllable)**. It is **NOT C3**.
+* **C3 (Difficult/uncontrollable):** Use for failures with < 1-2 seconds of reaction time OR failures that require expert skill (e.g., sudden steering lock, brake loss on a steep downhill).
+* **C2 (Normally controllable):** Use for failures that are obvious and give the driver several seconds to react (e.g., engine power loss, gradual brake fade, wiper failure).
+* **C1 (Simply controllable):** Use for failures that are non-critical or have very simple recovery actions (e.g., HVAC failure, radio failure).
+* **C0 (Controllable in general):** Use for trivial faults.
 
-**Severity:** S[0-3]
-**Rationale:** [Worst-case consequences? Why this severity?]
-
-**Controllability:** C[0-3]
-**Rationale:** [Can drivers avoid? Response time? Warnings available?]
-
-**Operational Situation:** [Most relevant scenario name]
 ---
+**Output Format:** Return ONLY a valid JSON array. Each hazard must be a JSON object. Provide **strong, clear rationale** for your Controllability choice.
 
-Provide E/S/C assessment now:"""
+```json
+[
+  {{
+    "hazard_index": 1,
+    "selected_situation_name": "Driving in heavy storm",
+    "controllability": "C2",
+    "controllability_rationale": "Driver has sufficient time (many seconds) to react to a loss of wipers. The standard response is to slow down and find a safe place to stop. This is 'normally controllable' by >90% of drivers. It is not C3."
+  }}
+]
+```
+Return the JSON array now (no markdown, no explanatory text, ONLY the JSON array):"""
         
         return prompt
     
     def _parse_esc_response(
         self,
         response: str,
-        hazop_batch: List[Dict]
+        hazop_batch: List[Dict],
+        scenarios: List[Dict]
     ) -> List[Dict]:
-        """Parse LLM response into hazard dicts with E/S/C ratings."""
+        """Parse LLM JSON response into hazard dicts with E/S/C ratings."""
+        import json
+        import re
         
         hazards = []
         
-        # Split into hazard sections
-        sections = response.split('## Hazard')
-        
-        for idx, hazop in enumerate(hazop_batch):
-            # Find corresponding section
-            section_text = ""
-            for section in sections[1:]:  # Skip first empty split
-                if section.strip().startswith(f"{idx + 1}"):
-                    section_text = section
-                    break
+        try:
+            # Try to extract JSON array from response
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_match = re.search(r'\[.*\]', response, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                else:
+                    json_str = response
             
-            # Parse E/S/C from section
-            exposure = self._extract_rating(section_text, 'Exposure', 'E')
-            severity = self._extract_rating(section_text, 'Severity', 'S')
-            controllability = self._extract_rating(section_text, 'Controllability', 'C')
+            # Parse JSON
+            assessments = json.loads(json_str)
             
-            # Extract rationales
-            exp_rationale = self._extract_rationale(section_text, 'Exposure')
-            sev_rationale = self._extract_rationale(section_text, 'Severity')
-            con_rationale = self._extract_rationale(section_text, 'Controllability')
-            
-            # Extract operational situation
-            op_situation = self._extract_operational_situation(section_text)
-            
-            # Create hazard dict
-            hazard = {
-                'id': f"H-{idx + 1:03d}",
-                'function_id': hazop.get('function_id', 'F-??'),
-                'function_name': hazop.get('function_name', 'Unknown'),
-                'guide_word': hazop.get('guide_word', 'N/A'),
-                'malfunctioning_behavior': hazop.get('malfunctioning_behavior', 'N/A'),
-                'hazardous_event': hazop.get('hazardous_event', 'N/A'),
-                'operational_situation': op_situation,
+            # Match assessments to hazop batch
+            for idx, hazop in enumerate(hazop_batch):
+                # Find matching assessment
+                assessment = None
+                if idx < len(assessments):
+                    assessment = assessments[idx]
+                else:
+                    log.warning(f"No assessment found for hazard {idx+1}")
+                    assessment = {}
                 
-                # E/S/C ratings
-                'exposure': exposure,
-                'exposure_rationale': exp_rationale,
-                'severity': severity,
-                'severity_rationale': sev_rationale,
-                'controllability': controllability,
-                'controllability_rationale': con_rationale
-            }
-            
-            hazards.append(hazard)
+                # 1. Get data from LLM (Controllability + Situation Name)
+                c_rating = assessment.get('controllability', 'C2')
+                c_rationale = assessment.get('controllability_rationale', 'Default - requires review')
+                selected_situation_name = assessment.get('selected_situation_name', 'General operation')
+
+                # 2. Get data from HAZOP input (Severity)
+                s_rating = hazop.get('severity', 'S2')
+                s_rationale = hazop.get('severity_rationale', 'From HAZOP preliminary assessment')
+
+                # 3. Get data from Scenarios (Exposure)
+                e_rating = 'E3' # Default
+                e_rationale = 'Default - requires review'
+                
+                # Find the selected scenario to get its E-rating
+                selected_scenario = next((s for s in scenarios if s.get('name') == selected_situation_name), None)
+                
+                if selected_scenario:
+                    e_rating = selected_scenario.get('exposure_class', 'E3')
+                    e_rationale = selected_scenario.get('rationale', 'Rationale from selected operational situation')
+                else:
+                    log.warning(f"Could not find matching scenario '{selected_situation_name}' for hazard {hazop.get('id')}")
+                    e_rationale = f"Could not find matching scenario '{selected_situation_name}'. Defaulting to E3."
+                    selected_situation_name = f"ERROR: Not Found ('{selected_situation_name}')"
+
+                # 4. Create hazard dict (combine S, E, C)
+                hazard = {
+                    'id': f"H-{idx + 1:03d}", # Note: This ID will be overwritten by the tool
+                    'function_id': hazop.get('function_id', 'F-??'),
+                    'function_name': hazop.get('function_name', 'Unknown'),
+                    'guide_word': hazop.get('guide_word', 'N/A'),
+                    'malfunctioning_behavior': hazop.get('malfunctioning_behavior', 'N/A'),
+                    'hazardous_event': hazop.get('hazardous_event', 'N/A'),
+                    
+                    'operational_situation': selected_situation_name,
+                    
+                    'severity': s_rating,
+                    'severity_rationale': s_rationale,
+                    'exposure': e_rating,
+                    'exposure_rationale': e_rationale,
+                    'controllability': c_rating,
+                    'controllability_rationale': c_rationale,
+                }
+                
+                hazards.append(hazard)
+        
+        except json.JSONDecodeError as e:
+            log.error(f"Failed to parse JSON response: {e}")
+            log.warning(f"LLM Response: {response[:500]}...")
+            # Fallback to default hazards
+            return self._create_default_hazards(hazop_batch)
+        
+        except Exception as e:
+            log.error(f"Error parsing E/S/C response: {e}")
+            return self._create_default_hazards(hazop_batch)
         
         return hazards
     
-    def _extract_rating(self, text: str, rating_type: str, prefix: str) -> str:
-        """Extract rating (E/S/C) from text."""
-        import re
-        
-        # Look for pattern like "**Exposure:** E4" or "Exposure: E4"
-        pattern = rf'\*\*{rating_type}:\*\*\s*{prefix}(\d)'
-        match = re.search(pattern, text)
-        
-        if match:
-            return f"{prefix}{match.group(1)}"
-        
-        # Try without asterisks
-        pattern = rf'{rating_type}:\s*{prefix}(\d)'
-        match = re.search(pattern, text)
-        
-        if match:
-            return f"{prefix}{match.group(1)}"
-        
-        # Default
-        return f"{prefix}2"
-    
-    def _extract_rationale(self, text: str, rating_type: str) -> str:
-        """Extract rationale for a rating."""
-        import re
-        
-        # Look for "**Rationale:** [text]" after the rating type
-        pattern = rf'{rating_type}:.*?\*\*Rationale:\*\*\s*(.*?)(?=\n\*\*|\n\n|$)'
-        match = re.search(pattern, text, re.DOTALL)
-        
-        if match:
-            return match.group(1).strip()
-        
-        return "Rationale not provided"
-    
-    def _extract_operational_situation(self, text: str) -> str:
-        """Extract operational situation name from text."""
-        import re
-        
-        pattern = r'\*\*Operational Situation:\*\*\s*(.*?)(?=\n---|\n\n|$)'
-        match = re.search(pattern, text, re.DOTALL)
-        
-        if match:
-            return match.group(1).strip()
-        
-        return "General operation"
-    
-    def _create_default_hazards(self, hazop_batch: List[Dict]) -> List[Dict]:
+    def _create_default_hazards(self, hazop_batch: List[Dict], scenarios: List[Dict]) -> List[Dict]:
         """Create hazards with default E/S/C ratings as fallback."""
         
         hazards = []
+        
+        # Try to get a default scenario
+        default_scenario_name = "General operation"
+        default_exposure = "E3"
+        if scenarios:
+            default_scenario_name = scenarios[0].get('name', 'General operation')
+            default_exposure = scenarios[0].get('exposure_class', 'E3')
+
         for idx, hazop in enumerate(hazop_batch):
             hazard = {
                 'id': f"H-{idx + 1:03d}",
@@ -331,8 +409,8 @@ Provide E/S/C assessment now:"""
                 'guide_word': hazop.get('guide_word', 'N/A'),
                 'malfunctioning_behavior': hazop.get('malfunctioning_behavior', 'N/A'),
                 'hazardous_event': hazop.get('hazardous_event', 'N/A'),
-                'operational_situation': 'General operation',
-                'exposure': 'E3',
+                'operational_situation': default_scenario_name,
+                'exposure': default_exposure,
                 'exposure_rationale': 'Default rating - requires manual review',
                 'severity': hazop.get('severity', 'S2'),
                 'severity_rationale': 'From HAZOP preliminary assessment',

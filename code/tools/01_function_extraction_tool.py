@@ -9,6 +9,7 @@ from cat.log import log
 from pathlib import Path
 from typing import List, Dict
 import re
+import json
 
 from ..utils import get_item_definitions_path
 
@@ -401,9 +402,11 @@ def extract_functions_from_text(text: str, system_name: str, cat) -> List[Dict]:
         if not is_duplicate:
             unique_functions.append(func)
     
+
     log.info(f"✅ Extracted {len(unique_functions)} unique functions (from {len(functions)} total matches)")
-    
-    return unique_functions
+    output_functions = json.dumps(unique_functions)
+
+    return output_functions
 
 
 # ============================================================================

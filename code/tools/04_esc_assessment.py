@@ -9,14 +9,15 @@ from cat.log import log
 import sys
 import os
 
-# Setup paths
+#Setup paths
 current_file = os.path.abspath(__file__)
 tools_folder = os.path.dirname(current_file)
-plugin_folder = os.path.dirname(tools_folder)
+code_folder = os.path.dirname(tools_folder) # Renamed for clarity
+plugin_folder = os.path.dirname(code_folder) # Get the actual plugin root
 
 # Add modules to path
-sys.path.insert(0, os.path.join(plugin_folder, 'core'))
-sys.path.insert(0, os.path.join(plugin_folder, 'code', 'generators'))
+sys.path.insert(0, os.path.join(code_folder, 'core'))
+sys.path.insert(0, os.path.join(code_folder, 'generators')) # Corrected path
 
 from iso26262_base import ISO26262Tool, WorkflowManager
 
@@ -34,6 +35,97 @@ class ESCAssessmentTool(ISO26262Tool):
         super().__init__(cat)
         self.plugin_folder = plugin_folder
     
+    def _format_json_output(self, hazards: list, system_name: str, stats: dict) -> dict:
+        """Format E/S/C assessment as complete JSON structure with all metadata."""
+        from datetime import datetime
+        
+        output = {
+            "status": "success",
+            "analysis_type": "ESC_Assessment",
+            "iso_standard": "ISO 26262-3:2018",
+            "clause": "6.4.4 - Classification of hazardous events",
+            "system_name": system_name,
+            "timestamp": datetime.now().isoformat(),
+            "statistics": {
+                "total_hazards": len(hazards),
+                "severity_distribution": {
+                    "S3": stats['severity'].get('S3', 0),
+                    "S2": stats['severity'].get('S2', 0),
+                    "S1": stats['severity'].get('S1', 0),
+                    "S0": stats['severity'].get('S0', 0)
+                },
+                "exposure_distribution": {
+                    "E4": stats['exposure'].get('E4', 0),
+                    "E3": stats['exposure'].get('E3', 0),
+                    "E2": stats['exposure'].get('E2', 0),
+                    "E1": stats['exposure'].get('E1', 0),
+                    "E0": stats['exposure'].get('E0', 0)
+                },
+                "controllability_distribution": {
+                    "C3": stats['controllability'].get('C3', 0),
+                    "C2": stats['controllability'].get('C2', 0),
+                    "C1": stats['controllability'].get('C1', 0),
+                    "C0": stats['controllability'].get('C0', 0)
+                }
+            },
+            "hazards": [],
+            "next_steps": [
+                "Review E/S/C ratings and rationales",
+                "Proceed to ASIL determination: `run asil determination`",
+                "Validate ratings with safety experts"
+            ],
+            "compliance_notes": [
+                "✓ Clause 6.4.4: E/S/C classification complete",
+                "✓ Severity based on injury potential",
+                "✓ Exposure based on operational situation probability",
+                "✓ Controllability based on driver capability"
+            ]
+        }
+        
+        for hazard in hazards:
+            hazard_data = {
+                "hazard_id": hazard.get('id', 'H-???'),
+                "function_id": hazard.get('function_id', 'F-??'),
+                "function_name": hazard.get('function_name', 'Unknown'),
+                "guide_word": hazard.get('guide_word', 'N/A'),
+                "malfunction": hazard.get('malfunctioning_behavior', 'N/A'),
+                "hazardous_event": hazard.get('hazardous_event', 'N/A'),
+                "driving_scenario": hazard.get('operational_situation', 'General operation'),
+                "severity": {
+                    "rating": hazard.get('severity', 'S?'),
+                    "rationale": hazard.get('severity_rationale', 'Not provided')
+                },
+                "exposure": {
+                    "rating": hazard.get('exposure', 'E?'),
+                    "rationale": hazard.get('exposure_rationale', 'Not provided')
+                },
+                "controllability": {
+                    "rating": hazard.get('controllability', 'C?'),
+                    "rationale": hazard.get('controllability_rationale', 'Not provided')
+                }
+            }
+            output["hazards"].append(hazard_data)
+        
+        return output
+    
+    def _format_json_error(self, message: str, error_type: str, suggestions: list = None) -> str:
+        """Format error as JSON string."""
+        import json
+        from datetime import datetime
+        
+        error_data = {
+            "status": "error",
+            "analysis_type": "ESC_Assessment",
+            "iso_standard": "ISO 26262-3:2018",
+            "clause": "6.4.4 - Classification of hazardous events",
+            "timestamp": datetime.now().isoformat(),
+            "error_type": error_type,
+            "message": message,
+            "suggestions": suggestions or []
+        }
+        
+        return json.dumps(error_data, indent=2, ensure_ascii=False)
+    
     def execute(self, tool_input: str = "all") -> str:
         """Assess E/S/C for all hazards"""
         
@@ -42,18 +134,21 @@ class ESCAssessmentTool(ISO26262Tool):
         if not is_valid:
             # Provide specific guidance based on what's missing
             if 'hazop_results' in missing:
-                return self.format_error(
+                return self._format_json_error(
                     "No HAZOP results available",
+                    "missing_prerequisites",
                     ["Complete HAZOP analysis first: `apply hazop analysis`"]
                 )
             elif 'operational_situations' in missing:
-                return self.format_error(
+                return self._format_json_error(
                     "No operational situations defined",
+                    "missing_prerequisites",
                     ["Define operational situations first: `define operational situations`"]
                 )
             else:
-                return self.format_error(
+                return self._format_json_error(
                     f"Missing required data: {', '.join(missing)}",
+                    "missing_prerequisites",
                     ["Complete previous workflow steps"]
                 )
         
@@ -66,7 +161,7 @@ class ESCAssessmentTool(ISO26262Tool):
         
         try:
             # Import ESC generator
-            from generators.esc_generator import ESCGenerator
+            from ..generators.esc_generator import ESCGenerator
             
             # Create generator
             generator = ESCGenerator(self.llm, self.plugin_folder)
@@ -79,8 +174,9 @@ class ESCAssessmentTool(ISO26262Tool):
             )
             
             if not hazards:
-                return self.format_error(
+                return self._format_json_error(
                     "E/S/C assessment produced no results",
+                    "assessment_failed",
                     [
                         "Verify HAZOP results are valid",
                         "Check operational situations",
@@ -102,40 +198,37 @@ class ESCAssessmentTool(ISO26262Tool):
             # Calculate statistics
             stats = generator.calculate_esc_statistics(hazards)
             
-            return self.format_success(
-                f"E/S/C Assessment Complete: {item_name}",
-                {
-                    "Total Hazards Assessed": len(hazards),
-                    "Severity S3": stats['severity'].get('S3', 0),
-                    "Severity S2": stats['severity'].get('S2', 0),
-                    "Severity S1": stats['severity'].get('S1', 0),
-                    "Exposure E4": stats['exposure'].get('E4', 0),
-                    "Exposure E3": stats['exposure'].get('E3', 0),
-                    "Controllability C3": stats['controllability'].get('C3', 0)
-                },
-                [
-                    "Review E/S/C ratings: `show hara table`",
-                    "Determine ASIL ratings: `determine asil`"
-                ]
-            ) + "\n\n**ISO 26262-3:2018 Compliance:**\n" + \
-                "✓ Clause 6.4.4: E/S/C classification complete\n" + \
-                "✓ Severity based on injury potential\n" + \
-                "✓ Exposure based on operational situation probability\n" + \
-                "✓ Controllability based on driver capability"
+            # Format output as JSON
+            output_data = self._format_json_output(hazards, item_name, stats)
+            
+            # Save JSON to file
+            import json
+            output_file = f"/mnt/user-data/outputs/esc_assessment_{item_name.replace(' ', '_').lower()}.json"
+            os.makedirs("/mnt/user-data/outputs", exist_ok=True)
+            
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(output_data, f, indent=2, ensure_ascii=False)
+            
+            log.info(f"✅ JSON saved to: {output_file}")
+            
+            # Return JSON string for tool decorator to parse and store
+            return json.dumps(output_data, indent=2, ensure_ascii=False)
             
         except Exception as e:
             log.error(f"E/S/C assessment failed: {e}")
             import traceback
             log.error(traceback.format_exc())
             
-            return self.format_error(
+            return self._format_json_error(
                 f"E/S/C assessment failed: {str(e)}",
+                "execution_error",
                 [
                     "Verify data integrity",
                     "Check LLM availability",
                     "Retry assessment"
                 ]
             )
+
 
 
 # ==============================================================================
@@ -145,34 +238,28 @@ class ESCAssessmentTool(ISO26262Tool):
 @tool(
     return_direct=True,
     examples=[
-        "assess esc for all hazards",
-        "evaluate exposure severity controllability",
-        "perform esc assessment"
+        "assess all hazards",
+        "assess esc",
+        "run esc assessment",
+        "perform E/S/C classification"
     ]
 )
 def assess_esc_for_hazards(tool_input, cat):
     """
-    Assess Exposure, Severity, and Controllability for all hazards.
+    Assesses Exposure (E), Severity (S), and Controllability (C) for all hazards.
     
     This is Step 4 of the HARA workflow (ISO 26262-3:2018, Clause 6.4.4).
+    It uses the HAZOP results and Operational Situations to classify each hazard.
     
-    For each hazard from HAZOP analysis:
-    - **Exposure (E0-E4):** How often does the operational situation occur?
-    - **Severity (S0-S3):** How severe are potential injuries?
-    - **Controllability (C0-C3):** Can drivers avoid harm?
-    
-    Each rating requires detailed rationale.
+    Returns a complete JSON report with E/S/C ratings, statistics, 
+    and compliance notes for external formatting.
     
     Args:
-        tool_input: Optional - "all" or specific hazard ID
+        tool_input: This argument is ignored. The tool always runs for ALL hazards.
         cat: Cheshire Cat instance
     
     Returns:
-        Complete HARA table with E/S/C ratings
-    
-    Example:
-        User: "assess esc for all hazards"
-        Output: HARA table with E/S/C columns filled
+        JSON string with complete E/S/C assessment data.
     """
     
     log.info("🔧 TOOL CALLED: assess_esc_for_hazards")
@@ -184,7 +271,50 @@ def assess_esc_for_hazards(tool_input, cat):
     
     # Execute tool
     tool = ESCAssessmentTool(cat, plugin_folder)
-    return tool.execute(tool_input if tool_input else "all")
+    # We pass "all" to the execute method, ignoring user input
+    json_output = tool.execute("all")
+    
+    # Parse and store COMPLETE JSON in working memory for formatter plugins
+    import json
+    try:
+        result_data = json.loads(json_output)
+        
+        if result_data.get('status') == 'success':
+            # Store COMPLETE JSON output - formatter can access ALL fields
+            cat.working_memory['esc_assessment_complete_output'] = result_data
+            
+            # The 'execute' method already saved the correct 'complete_hara_table'
+            # (which contains the raw S,E,C data) to working memory.
+            # We just store the other metadata here for the formatter.
+            cat.working_memory['esc_statistics'] = result_data['statistics']
+            cat.working_memory['esc_system_name'] = result_data['system_name']
+            cat.working_memory['esc_timestamp'] = result_data['timestamp']
+            cat.working_memory['esc_iso_standard'] = result_data['iso_standard']
+            cat.working_memory['esc_clause'] = result_data['clause']
+            cat.working_memory['esc_next_steps'] = result_data['next_steps']
+            cat.working_memory['esc_compliance_notes'] = result_data['compliance_notes']
+            
+            # Signal that data is ready for formatting
+            cat.working_memory['last_operation'] = 'esc_assessment_complete'
+            cat.working_memory['needs_formatting'] = True
+            
+            log.info("✅ Complete E/S/C assessment JSON stored in working_memory")
+            log.info(f"✅ 'complete_hara_table' (from generator) is safe in working_memory")
+        
+        elif result_data.get('status') == 'error':
+            # Store error for potential error handling by formatter
+            cat.working_memory['esc_assessment_error'] = result_data
+            log.warning(f"⚠️ E/S/C assessment error: {result_data.get('message', 'Unknown error')}")
+    
+    except json.JSONDecodeError as e:
+        log.error(f"❌ Could not parse E/S/C assessment output as JSON: {e}")
+        cat.working_memory['esc_assessment_error'] = {
+            'status': 'error',
+            'error_type': 'json_parse_error',
+            'message': str(e)
+        }
+    
+    return json_output
 
 
 @tool(

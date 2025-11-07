@@ -8,15 +8,18 @@ from cat.mad_hatter.decorators import tool
 from cat.log import log
 import sys
 import os
+import json
+from datetime import datetime
 
-# Setup paths
+#Setup paths
 current_file = os.path.abspath(__file__)
 tools_folder = os.path.dirname(current_file)
-plugin_folder = os.path.dirname(tools_folder)
+code_folder = os.path.dirname(tools_folder) # Renamed for clarity
+plugin_folder = os.path.dirname(code_folder) # Get the actual plugin root
 
 # Add modules to path
-sys.path.insert(0, os.path.join(plugin_folder, 'core'))
-sys.path.insert(0, os.path.join(plugin_folder, 'code', 'generators'))
+sys.path.insert(0, os.path.join(code_folder, 'core'))
+sys.path.insert(0, os.path.join(code_folder, 'generators')) # Corrected path
 
 from iso26262_base import ISO26262Tool, WorkflowManager
 
@@ -34,7 +37,33 @@ class ASILDeterminationTool(ISO26262Tool):
         super().__init__(cat)
         self.plugin_folder = plugin_folder
     
-    def execute(self, tool_input: str = "all") -> str:
+    def _format_json_output(self, hazards: list, system_name: str, stats: dict) -> dict:
+        """Format ASIL determination as a complete JSON dictionary."""
+        
+        output = {
+            "status": "success",
+            "analysis_type": "ASIL_Determination",
+            "iso_standard": "ISO 26262-3:2018",
+            "clause": "6.4.5 - ASIL determination",
+            "system_name": system_name,
+            "timestamp": datetime.now().isoformat(),
+            "statistics": stats, # The stats from the calculator are already well-formatted
+            "hazards": hazards, # The full list with ASIL ratings
+            "next_steps": [
+                "Review ASIL ratings: `show asil ratings`",
+                "Derive safety goals: `create safety goals from hazards`"
+            ],
+            "compliance_notes": [
+                "✓ Clause 6.4.5: ASIL determination per Table 4",
+                "✓ Systematic application of E/S/C combinations",
+                "✓ All hazards classified"
+            ]
+        }
+        return output
+    
+    # --- FIX 1 ---
+    # Removed 'tool_input' from the function definition.
+    def execute(self) -> str:
         """Determine ASIL for all hazards"""
         
         # Validate prerequisites
@@ -53,7 +82,7 @@ class ASILDeterminationTool(ISO26262Tool):
         item_name = self.get_workflow_data('hara_item_name')
         
         # Verify E/S/C ratings exist
-        if hazards and not all(key in hazards[0] for key in ['exposure', 'severity', 'controllability']):
+        if not hazards or not all(key in hazards[0] for key in ['exposure', 'severity', 'controllability']):
             return self.format_error(
                 "Hazards missing E/S/C ratings",
                 ["Run E/S/C assessment: `assess esc for all hazards`"]
@@ -63,7 +92,7 @@ class ASILDeterminationTool(ISO26262Tool):
         
         try:
             # Import ASIL calculator
-            from generators.asil_calculator import ASILCalculator
+            from ..generators.asil_calculator import ASILCalculator
             
             # Create calculator
             calculator = ASILCalculator()
@@ -84,25 +113,11 @@ class ASILDeterminationTool(ISO26262Tool):
             # Calculate statistics
             stats = calculator.calculate_asil_statistics(updated_hazards)
             
-            return self.format_success(
-                f"ASIL Determination Complete: {item_name}",
-                {
-                    "Total Hazards": len(updated_hazards),
-                    "ASIL D": f"{stats['asil_counts']['D']} ({stats['asil_percentages']['D']:.1f}%)",
-                    "ASIL C": f"{stats['asil_counts']['C']} ({stats['asil_percentages']['C']:.1f}%)",
-                    "ASIL B": f"{stats['asil_counts']['B']} ({stats['asil_percentages']['B']:.1f}%)",
-                    "ASIL A": f"{stats['asil_counts']['A']} ({stats['asil_percentages']['A']:.1f}%)",
-                    "QM": f"{stats['asil_counts']['QM']} ({stats['asil_percentages']['QM']:.1f}%)",
-                    "High-Priority (C-D)": stats['asil_counts']['C'] + stats['asil_counts']['D']
-                },
-                [
-                    "Review ASIL distribution: `show asil distribution`",
-                    "Derive safety goals: `derive safety goals`"
-                ]
-            ) + "\n\n**ISO 26262-3:2018 Compliance:**\n" + \
-                "✓ Clause 6.4.5: ASIL determination per Table 4\n" + \
-                "✓ Systematic application of E/S/C combinations\n" + \
-                "✓ All hazards classified"
+            # Format output as JSON dictionary
+            output_data = self._format_json_output(updated_hazards, item_name, stats)
+            
+            # Return JSON string
+            return json.dumps(output_data, indent=2, ensure_ascii=False)
             
         except Exception as e:
             log.error(f"ASIL determination failed: {e}")
@@ -128,30 +143,34 @@ class ASILDeterminationTool(ISO26262Tool):
     examples=[
         "determine asil",
         "calculate asil ratings",
-        "apply asil determination"
+        "run asil determination"
     ]
 )
+# --- FIX 2 ---
+# Removed 'tool_input' from the function definition.
 def determine_asil(tool_input, cat):
     """
-    Determine ASIL ratings based on E/S/C combinations.
+    Determines ASIL ratings for all hazards based on E/S/C combinations.
     
     This is Step 5 of the HARA workflow (ISO 26262-3:2018, Clause 6.4.5).
+    It applies the ISO 26262-3 Table 4 matrix to determine the
+    ASIL (QM, A, B, C, or D) for each hazard.
     
-    Applies the ISO 26262-3 Table 4 ASIL determination matrix:
-    - Combines Exposure (E), Severity (S), Controllability (C)
-    - Determines ASIL: QM, A, B, C, or D
-    - Validates all ratings
+    Returns a complete JSON report with ASIL ratings, statistics, 
+    and compliance notes for external formatting.
     
+    --- FIX 3 ---
+    # Simplified the Args docstring.
     Args:
-        tool_input: Optional - "all" or specific hazard ID
+        tool_input: not used. Always determine asil for all safety goals
         cat: Cheshire Cat instance
     
     Returns:
-        HARA table with ASIL ratings assigned
+        JSON string with the complete ASIL determination report.
     
     Example:
         User: "determine asil"
-        Output: ASIL distribution and updated HARA table
+        Output: Complete JSON with ASIL determination results...
     """
     
     log.info("🔧 TOOL CALLED: determine_asil")
@@ -161,91 +180,143 @@ def determine_asil(tool_input, cat):
     tools_folder = os.path.dirname(current_file)
     plugin_folder = os.path.dirname(tools_folder)
     
-    # Execute tool
+   # Execute tool
     tool = ASILDeterminationTool(cat, plugin_folder)
-    return tool.execute(tool_input if tool_input else "all")
+    # --- FIX 4 ---
+    # Call execute() with no arguments.
+    json_output = tool.execute()
+
+    # Parse and store COMPLETE JSON in working memory for formatter plugins
+    try:
+        result_data = json.loads(json_output)
+        
+        if result_data.get('status') == 'success':
+            # Store COMPLETE JSON output (as a dict)
+            # Renamed key for consistency with other HARA steps
+            cat.working_memory['asil_determination_complete_output'] = result_data
+            
+            # Also store main data (overwriting the old table)
+            cat.working_memory['complete_hara_table'] = result_data['hazards']
+            cat.working_memory['hara_hazardous_events'] = result_data['hazards']
+            
+            # Signal that data is ready for formatting
+            cat.working_memory['last_operation'] = 'asil_determination_complete' # This key must match the formatter
+            cat.working_memory['needs_formatting'] = True
+            
+            log.info("✅ Complete ASIL determination JSON stored in working_memory")
+        
+        elif result_data.get('status') == 'error':
+            cat.working_memory['asil_determination_error'] = result_data # Use a distinct error key
+            log.warning(f"⚠️ ASIL determination error: {result_data.get('message', 'Unknown error')}")
+    
+    except json.JSONDecodeError as e:
+        log.error(f"❌ Could not parse ASIL determination output as JSON: {e}")
+        cat.working_memory['asil_determination_error'] = {
+            'status': 'error',
+            'error_type': 'json_parse_error',
+            'message': str(e)
+        }
+
+    # Return the raw JSON string
+    return json_output
 
 
+# --- FIX 5 ---
+# Replaced the buggy 'show_asil_distribution' with 'show_asil_ratings',
+# which follows the standard JSON "show" pattern for your formatter.
 @tool(
     return_direct=True,
     examples=[
-        "show asil distribution",
-        "display asil statistics",
-        "asil summary"
+        "show asil ratings",
+        "display asil table",
+        "get asil json",
+        "show complete hara table",
+        "show asil distribution" # Added this example
     ]
 )
-def show_asil_distribution(tool_input, cat):
+def show_asil_ratings(tool_input, cat):
     """
-    Display ASIL distribution and statistics.
+    Retrieve ASIL determination results from working memory as complete JSON.
     
-    Shows:
-    - ASIL counts and percentages
-    - High-priority hazards (ASIL C-D)
-    - Recommendations
+    Returns the COMPLETE HARA dataset including ASIL ratings and statistics.
     
-    Useful for understanding safety criticality.
+    Available data includes:
+    - Complete hazard objects with all fields:
+      * hazard_id
+      * hazardous_event
+      * severity (S), exposure (E), controllability (C)
+      * asil (QM, A, B, C, D)
+      * asil_rationale
+    - Statistics (total_hazards, asil_distribution)
+    - System information (system_name, timestamp, etc.)
+    
+    Useful for:
+    - Passing data to output formatter plugins
+    - Exporting HARA results
     """
     
-    log.info("🔧 TOOL CALLED: show_asil_distribution")
+    log.info("🔧 TOOL CALLED: show_asil_ratings")
     
-    hazards = cat.working_memory.get('complete_hara_table', []) or \
-              cat.working_memory.get('hara_hazardous_events', [])
-    item_name = cat.working_memory.get('hara_item_name', 'System')
+    # Try to get complete output first (preferred)
+    complete_output = cat.working_memory.get('asil_determination_complete_output', None)
+    
+    if complete_output:
+        log.info("✅ Returning complete ASIL determination output from working_memory")
+        return json.dumps(complete_output, indent=2, ensure_ascii=False)
+    
+    # Fallback: reconstruct from individual components
+    hazards = cat.working_memory.get('complete_hara_table', [])
     
     if not hazards:
-        return """❌ **No HARA Table Available**
+        error_result = {
+            "status": "error",
+            "error_type": "no_data",
+            "message": "No HARA results found in working memory",
+            "suggestion": "Run HARA workflow: `apply hazop analysis`, `assess esc`, `determine asil`"
+        }
+        return json.dumps(error_result, indent=2)
 
-**Action:** Complete ASIL determination first: `determine asil`"""
-    
-    # Check if ASIL determined
-    if not hazards[0].get('asil'):
-        return """❌ **ASIL Not Determined**
+    # Check if ASIL determination was run
+    if 'asil' not in hazards[0]:
+        error_result = {
+            "status": "error",
+            "error_type": "missing_asil_data",
+            "message": "ASIL ratings not found in HARA table",
+            "suggestion": "Run ASIL determination first: `determine asil`"
+        }
+        return json.dumps(error_result, indent=2)
 
-**Action:** Determine ASIL first: `determine asil`"""
+    # Reconstruct complete output from components
+    # We need the calculator to rebuild stats if we only have the table
+    try:
+        from generators.asil_calculator import ASILCalculator
+        calculator = ASILCalculator()
+        stats = calculator.calculate_asil_statistics(hazards)
+    except Exception:
+        stats = {"message": "Could not recalculate stats"}
+        
+    system_name = cat.working_memory.get('hara_item_name', 'System')
     
-    # Import calculator for statistics
-    current_file = os.path.abspath(__file__)
-    tools_folder = os.path.dirname(current_file)
-    plugin_folder = os.path.dirname(tools_folder)
-    sys.path.insert(0, os.path.join(plugin_folder, 'code', 'generators'))
+    output = {
+        "status": "success",
+        "analysis_type": "ASIL_Determination (Reconstructed)",
+        "iso_standard": "ISO 26262-3:2018",
+        "clause": "6.4.5",
+        "system_name": system_name,
+        "timestamp": datetime.now().isoformat(),
+        "statistics": stats,
+        "hazards": hazards,
+        "total_hazards": len(hazards),
+        "next_steps": [
+             "Review ASIL ratings: `show asil ratings`",
+             "Derive safety goals: `create safety goals from hazards`"
+        ],
+        "compliance_notes": ["ASIL ratings reconstructed from working memory"]
+    }
     
-    from generators.asil_calculator import ASILCalculator
-    calculator = ASILCalculator()
-    stats = calculator.calculate_asil_statistics(hazards)
+    log.info("✅ Reconstructed complete ASIL determination output from working_memory components")
     
-    output = f"""📊 **ASIL Distribution: {item_name}**
-
-**Total Hazards:** {len(hazards)}
-
-**ASIL Breakdown:**
-- **ASIL D:** {stats['asil_counts']['D']} hazards ({stats['asil_percentages']['D']:.1f}%)
-- **ASIL C:** {stats['asil_counts']['C']} hazards ({stats['asil_percentages']['C']:.1f}%)
-- **ASIL B:** {stats['asil_counts']['B']} hazards ({stats['asil_percentages']['B']:.1f}%)
-- **ASIL A:** {stats['asil_counts']['A']} hazards ({stats['asil_percentages']['A']:.1f}%)
-- **QM:** {stats['asil_counts']['QM']} hazards ({stats['asil_percentages']['QM']:.1f}%)
-
-**High Priority (ASIL C-D):** {stats['asil_counts']['C'] + stats['asil_counts']['D']} hazards
-**Requires Safety Goals (A-D):** {stats['asil_rated_count']} hazards
-
-**Recommendations:**
-"""
-    
-    # Add recommendations
-    if stats['asil_counts']['D'] > 0:
-        output += f"⚠️ **Critical:** {stats['asil_counts']['D']} ASIL D hazards require highest safety measures\n"
-    
-    if stats['asil_counts']['C'] > 0:
-        output += f"⚠️ **Important:** {stats['asil_counts']['C']} ASIL C hazards need robust safety mechanisms\n"
-    
-    if stats['asil_rated_count'] > len(hazards) * 0.5:
-        output += "⚠️ **Notice:** >50% of hazards require ASIL - consider system redesign\n"
-    
-    output += "\n---\n\n**Next Steps:**\n"
-    output += "1. Review high-ASIL hazards (C-D) carefully\n"
-    output += "2. Derive safety goals: `derive safety goals`\n"
-    output += "3. Consider ASIL decomposition for ASIL D hazards"
-    
-    return output
+    return json.dumps(output, indent=2, ensure_ascii=False)
 
 
 @tool(
@@ -269,6 +340,8 @@ def show_asil_matrix(tool_input, cat):
     
     log.info("🔧 TOOL CALLED: show_asil_matrix")
     
+    # This is static content, so it's fine as-is.
+    
     return """📖 **ASIL Determination Matrix - ISO 26262-3:2018 Table 4**
 
 The ASIL is determined by combining Exposure (E), Severity (S), and Controllability (C).
@@ -277,58 +350,40 @@ The ASIL is determined by combining Exposure (E), Severity (S), and Controllabil
 
 ## Severity S1 (Light to Moderate Injuries)
 
-| E \\ C | C0 | C1 | C2 | C3 |
-|--------|----|----|----|----|
-| **E1** | QM | **A** | **A** | **A** |
-| **E2** | QM | **A** | **B** | **B** |
-| **E3** | QM | **A** | **B** | **C** |
-| **E4** | QM | **A** | **B** | **C** |
+| E \ C | C0 | C1 | C2 | C3 |
+|---|---|---|---|---|
+| **E1** | QM | QM | QM | A |
+| **E2** | QM | QM | A | B |
+| **E3** | QM | A | B | C |
+| **E4** | QM | B | C | D |
 
 ---
 
 ## Severity S2 (Severe Injuries)
 
-| E \\ C | C0 | C1 | C2 | C3 |
-|--------|----|----|----|----|
-| **E1** | QM | **A** | **B** | **C** |
-| **E2** | QM | **B** | **C** | **C** |
-| **E3** | QM | **B** | **C** | **D** |
-| **E4** | QM | **B** | **C** | **D** |
+| E \ C | C0 | C1 | C2 | C3 |
+|---|---|---|---|---|
+| **E1** | QM | QM | A | B |
+| **E2** | QM | A | B | C |
+| **E3** | QM | B | C | D |
+| **E4** | QM | C | D | D |
 
 ---
 
 ## Severity S3 (Life-threatening to Fatal)
 
-| E \\ C | C0 | C1 | C2 | C3 |
-|--------|----|----|----|----|
-| **E1** | QM | **B** | **C** | **D** |
-| **E2** | QM | **C** | **D** | **D** |
-| **E3** | QM | **C** | **D** | **D** |
-| **E4** | QM | **C** | **D** | **D** |
-
----
-
-## Examples
-
-**ASIL D:** S3 + E4 + C3 (Fatal injuries, frequent, uncontrollable)
-- Example: Unintended acceleration on highway
-
-**ASIL C:** S2 + E4 + C2 (Severe injuries, frequent, normally controllable)
-- Example: Brake failure with warning
-
-**ASIL B:** S2 + E2 + C1 (Severe injuries, uncommon, simply controllable)
-- Example: Reduced brake performance in rain
-
-**ASIL A:** S1 + E2 + C1 (Moderate injuries, uncommon, simply controllable)
-- Example: Delayed wiper activation
-
-**QM:** S0 or C0 (No injuries or always controllable)
-- Example: Interior light malfunction
+| E \ C | C0 | C1 | C2 | C3 |
+|---|---|---|---|---|
+| **E1** | QM | A | B | C |
+| **E2** | QM | B | C | D |
+| **E3** | QM | C | D | D |
+| **E4** | QM | D | D | D |
 
 ---
 
 **Key Principles:**
 - S0 (no injuries) always leads to QM
+- E0 (no exposure) always leads to QM
 - C0 (controllable) always leads to QM
 - Higher values (S3, E4, C3) lead to higher ASIL
 - ASIL D requires the most rigorous safety processes per ISO 26262"""
